@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# PIO temporary and output files
+.pio
