@@ -70,10 +70,16 @@ public:
   // Reads len sequential bytes from a register, placing the results in dataOut, returning success
   bool readReg(uint16_t addr, size_t len, uint8_t* dataOut);
 
+  // Reads VoSpi frame
+  bool readVoSpi(size_t bufferLen, uint8_t* buffer);
+
 protected:
   TwoWire* wire_;
   SPIClass* spi_;
   int csPin_, resetPin_;
+
+  size_t videoPacketDataLen_ = 160;  // 160 in Raw14 mode (default), 240 in RGB888 mode
+  size_t segmentPacketLen_ = 60;  // Lepton 3.5, telemetry disabled
 };
 
 #endif
