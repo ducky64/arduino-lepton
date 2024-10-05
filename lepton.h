@@ -37,8 +37,7 @@ public:
   };
 
   // Initializes this class without any hardware operations
-  FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset) : 
-    wire_(&wire), spi_(&spi), csPin_(cs), resetPin_(reset), spiSettings_(kDefaultSpiSettings) {};
+  FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset);
 
   // Acquires hardware resources (setting pin direction) and performs initial power-on reset.
   // Wire and Spi should be init'd beforehand.
@@ -85,14 +84,14 @@ public:
 protected:
   TwoWire* wire_;
   SPIClass* spi_;
-  SPISettings spiSettings_;
+  // SPISettings spiSettings_;  // TODO kDefaultSpiSettings seems to be unavailable until after construction so this can't be init'd
   int csPin_, resetPin_;
 
   size_t videoPacketDataLen_ = 160;  // bytes, 160 in Raw14 mode (default), 240 in RGB888 mode
   size_t segmentPacketLen_ = 60;  // Lepton 3.5, telemetry disabled
   size_t segmentsPerFrame_ = 4;
 
-  const SPISettings kDefaultSpiSettings = SPISettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+  static const SPISettings kDefaultSpiSettings;
 };
 
 #endif

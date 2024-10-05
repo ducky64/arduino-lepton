@@ -2,6 +2,11 @@
 
 #include "lepton.h"
 
+
+// Class constants
+const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+
+
 // Override these to use some other logging framework
 static const char* TAG = "lepton";
 #define LEP_LOGD(...) ESP_LOGD(TAG, __VA_ARGS__)
@@ -39,6 +44,11 @@ inline void U32ToBuffer(uint32_t data, uint8_t* bufferOut) {
   bufferOut[3] = (data >> 16) & 0xff;
 }
 
+
+FlirLepton::FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset) : 
+    wire_(&wire), spi_(&spi), csPin_(cs), resetPin_(reset) {
+  // 
+};
 
 bool FlirLepton::begin() {
     digitalWrite(csPin_, HIGH);
@@ -251,23 +261,16 @@ bool FlirLepton::begin() {
   }
 
   bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
+    spi_->beginTransaction(kDefaultSpiSettings);
     digitalWrite(csPin_, LOW);
-    spi_->beginTransaction(spiSettings_);
 
     uint16_t id = spi_->transfer16(0);
     bool isDiscard = ((id >> 8) & 0x0f) == 0x0f;
     uint16_t crc = spi_->transfer16(0);
     LEP_LOGI("VoSpi ID 0x%04x, CRC 0x%04x", id, crc);
-    for (size_t i=0; i<videoPacketDataLen_/2; i++) {
-      uint16_t buf = spi_->transfer16(0);
-      if (!isDiscard) {
-      buffer[i*2] = buf >> 8;
-      buffer[i*2+1] = buf & 0xff;
-      }
-    }
-
-    spi_->endTransaction();
+    spi_->transfer(buffer, videoPacketDataLen_);
     digitalWrite(csPin_, HIGH);
+    spi_->endTransaction();
 
     return !isDiscard;
   }

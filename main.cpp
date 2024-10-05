@@ -60,7 +60,7 @@ void setup() {
   delay(2000);
   digitalWrite(kPinLedR, HIGH);
 
-  spi.begin(kPinLepSck, kPinLepMiso, kPinLepMosi, -1);
+  spi.begin(kPinLepSck, kPinLepMiso, -1, -1);
   i2c.begin(kPinI2cSda, kPinI2cScl, 400000);
 
   pinMode(kPinLepPwrdn, OUTPUT);
@@ -75,11 +75,8 @@ void setup() {
 
   ESP_LOGI("main", "Setup complete");
 
-  while (digitalRead(kPinLepVsync) == LOW) {
-    ESP_LOGI("main", ".");
-  }
-
   delay(185);  // establish sync
+  // while (digitalRead(kPinLepVsync) == LOW);  // alternatively, wait for new frame
 
   for (size_t a=0; a<8; a++) {
     uint8_t vospiBuf[160];
