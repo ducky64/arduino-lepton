@@ -47,7 +47,6 @@ inline void U32ToBuffer(uint32_t data, uint8_t* bufferOut) {
 
 FlirLepton::FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset) : 
     wire_(&wire), spi_(&spi), csPin_(cs), resetPin_(reset) {
-  // 
 };
 
 bool FlirLepton::begin() {
@@ -89,7 +88,7 @@ bool FlirLepton::begin() {
       return false;
     }
     uint64_t flirSerial = bufferToU64(cmdBuffer);
-    LEP_LOGI("begin() read FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
+    LEP_LOGD("begin() read FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
     if (flirSerial == 0) {  // a sanity check on comms correctness
       LEP_LOGW("begin() failed sanity check: zero FLIR serial");
     }
@@ -119,10 +118,9 @@ bool FlirLepton::begin() {
         return false;
       }
       int32_t sysStatus = bufferToI32(cmdBuffer);
-      LEP_LOGI("begin() SYS status <- %i", sysStatus);
+      LEP_LOGD("begin() SYS status <- %i", sysStatus);
       if (sysStatus == 0) {
         break;
-        return false;
       } else {
         delay(1);  // continue waiting
       }
