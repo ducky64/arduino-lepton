@@ -85,47 +85,54 @@ bool FlirLepton::begin() {
   }
 
 
-  bool FlirLepton::commandGet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut) {
-    writeReg16(kRegDataLen, len / 2);
-    uint16_t commandId = ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kGet & 0x3);
-    writeReg16(kRegCommandId, commandId);
-
-    if (int8_t result = readNonBusyStatus() != kLepOk) {
-      LEP_LOGE("commandGet(%i, %i) returned %i != LEP_OK", moduleId, commandId, result);
-      return false;
+  FlirLepton::Result FlirLepton::commandGet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut) {
+    if (!writeReg16(kRegDataLen, len / 2)) {
+      LEP_LOGE("commandGet(%i, %i) write data len failed", moduleId, moduleCommandId);
+      return kUndefinedError;
     }
+    uint16_t commandId = ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kGet & 0x3);
+    if (!writeReg16(kRegCommandId, commandId)) {
+      LEP_LOGE("commandGet(%i, %i) write command id failed", moduleId, moduleCommandId);
+      return kUndefinedError;
+    }
+
+    Result result = readNonBusyStatus();
 
     if (!readReg(kRegData0, len, dataOut)) {
-      LEP_LOGE("commandGet(%i, %i) readReg failed", moduleId, commandId);
-      return false;
+      LEP_LOGE("commandGet(%i, %i) readReg failed", moduleId, moduleCommandId);
+      return kUndefinedError;
     }
 
-    return true;
+    return result;
   }
 
 
-  bool FlirLepton::commandSet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data) {
+  FlirLepton::Result FlirLepton::commandSet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data) {
     // TBD
-    return false;
+    return kUndefinedError;
   }
 
-  bool commandRun(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId) {
-    // TBD
-    return false;
+  FlirLepton::Result FlirLepton::commandRun(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId) {
+    uint16_t commandId = ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kRun & 0x3);
+    if (!writeReg16(kRegCommandId, commandId)) {
+      LEP_LOGE("commandRun(%i, %i) write command id failed", moduleId, moduleCommandId);
+      return kUndefinedError;
+    }
+    return readNonBusyStatus();
   }
 
 
-  int8_t FlirLepton::readNonBusyStatus() {
+  FlirLepton::Result FlirLepton::readNonBusyStatus() {
     while (true) {  // wait for status bit not busy
       uint16_t statusData;
       if (!readReg16(kRegStatus, &statusData)) {
         LEP_LOGE("readNonBusyStatus() read status failed");
-        return -127;  // note, overlaps with LEP_UNDEFINED_ERROR_CODE
+        return kUndefinedError;
       }
       LEP_LOGD("status <- 0x%04x", statusData);
 
       if (!(statusData & 1)) {
-        return (int8_t)(statusData >> 8);          
+        return (FlirLepton::Result)(int8_t)(statusData >> 8);          
       } else {
         delay(1);
       }

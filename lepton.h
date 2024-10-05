@@ -37,6 +37,7 @@ public:
 
   enum Result {
     kLepOk = 0,
+    kUndefinedError = -127,  // also used here for I2C errors
   };
 
   // Initializes this class without any hardware operations
@@ -55,13 +56,13 @@ public:
 
   // Sends and executes commands to the camera
   // len is in bytes, double the SDK data length in the IDD document
-  bool commandGet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut);
-  bool commandSet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data);
-  bool commandRun(ModuleId moduleId, uint8_t moduleCommandId);
+  Result commandGet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut);
+  Result commandSet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data);
+  Result commandRun(ModuleId moduleId, uint8_t moduleCommandId);
 
   // Polls until the status register is non-busy, and return the error code.
   // Comms errors map to -127
-  int8_t readNonBusyStatus();
+  Result readNonBusyStatus();
 
   // Writes data to a 16-bit register, returning success
   bool writeReg16(uint16_t addr, uint16_t data);
