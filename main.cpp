@@ -67,11 +67,37 @@ void setup() {
   digitalWrite(kPinLepPwrdn, HIGH);
 
   ESP_LOGI("main", "Start init");
-  bool leptonResult = lepton.begin();
-  ESP_LOGI("main", "Lepton init << %i", leptonResult);
+  pinMode(kPinLepVsync, INPUT);
+  bool beginResult = lepton.begin();
+  ESP_LOGI("main", "Lepton init << %i", beginResult);
+  FlirLepton::Result result = lepton.enableVsync();
+  ESP_LOGI("main", "Lepton Vsync << %i", result);
 
   ESP_LOGI("main", "Setup complete");
 
+  while (digitalRead(kPinLepVsync) == LOW) {
+    ESP_LOGI("main", ".");
+  }
+
+  delay(185);  // establish sync
+
+  for (size_t a=0; a<8; a++) {
+    uint8_t vospiBuf[160];
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf);
+    ESP_LOGI("main", "VoSpi read << %i", readResult);
+    const int kIncr = 16;
+    for (int i=0; i<10; i++) {
+      ESP_LOGI("main", "  %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
+          vospiBuf[i*kIncr+0], vospiBuf[i*kIncr+1], vospiBuf[i*kIncr+2], vospiBuf[i*kIncr+3],
+          vospiBuf[i*kIncr+4], vospiBuf[i*kIncr+5], vospiBuf[i*kIncr+6], vospiBuf[i*kIncr+7],
+          vospiBuf[i*kIncr+8], vospiBuf[i*kIncr+9], vospiBuf[i*kIncr+10], vospiBuf[i*kIncr+11],
+          vospiBuf[i*kIncr+12], vospiBuf[i*kIncr+13], vospiBuf[i*kIncr+14], vospiBuf[i*kIncr+15]);
+    }
+  }
+
+  lepton.end();
+  spi.end();
+  i2c.end();
   digitalWrite(kPinLepPwrdn, LOW);
   ESP_LOGI("main", "Lepton powerdown");
 }
@@ -79,5 +105,4 @@ void setup() {
 void loop() {
   delay(100);
   digitalWrite(kPinLedR, !digitalRead(kPinLedR));
-
 }

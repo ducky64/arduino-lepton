@@ -32,6 +32,13 @@ inline int32_t bufferToI32(uint8_t* buffer) {
   return (int32_t)bufferToU32(buffer);
 }
 
+inline void U32ToBuffer(uint32_t data, uint8_t* bufferOut) {
+  bufferOut[0] = (data >> 8) & 0xff;
+  bufferOut[1] = (data >> 0) & 0xff;
+  bufferOut[2] = (data >> 24) & 0xff;
+  bufferOut[3] = (data >> 16) & 0xff;
+}
+
 
 bool FlirLepton::begin() {
     digitalWrite(csPin_, HIGH);
@@ -95,6 +102,22 @@ bool FlirLepton::begin() {
       }
     }
 
+    while (true) {
+      result = commandGet(kSys, 0x04 >> 2, 4, cmdBuffer);
+      if (result != kLepOk) {
+        LEP_LOGE("begin() SYS status commandGet failed %i", result);
+        return false;
+      }
+      int32_t sysStatus = bufferToI32(cmdBuffer);
+      LEP_LOGI("begin() SYS status <- %i", sysStatus);
+      if (sysStatus == 0) {
+        break;
+        return false;
+      } else {
+        delay(1);  // continue waiting
+      }
+    }
+
     return true;
   }
 
@@ -105,12 +128,19 @@ bool FlirLepton::begin() {
   }
 
 
-  FlirLepton::Result FlirLepton::commandGet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut) {
+  FlirLepton::Result FlirLepton::enableVsync() {
+    uint8_t buffer[4];
+    U32ToBuffer(5, buffer);
+    return commandSet(kOem, 0x54 >> 2, 4, buffer, true);
+  }
+
+
+  FlirLepton::Result FlirLepton::commandGet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut, bool oemBit) {
     if (!writeReg16(kRegDataLen, len / 2)) {
       LEP_LOGE("commandGet(%i, %i) write data len failed", moduleId, moduleCommandId);
       return kUndefinedError;
     }
-    uint16_t commandId = ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kGet & 0x3);
+    uint16_t commandId = (oemBit ? 0x4000 : 0) | ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kGet & 0x3);
     if (!writeReg16(kRegCommandId, commandId)) {
       LEP_LOGE("commandGet(%i, %i) write command id failed", moduleId, moduleCommandId);
       return kUndefinedError;
@@ -127,9 +157,22 @@ bool FlirLepton::begin() {
   }
 
 
-  FlirLepton::Result FlirLepton::commandSet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data) {
-    // TBD
-    return kUndefinedError;
+  FlirLepton::Result FlirLepton::commandSet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data, bool oemBit) {
+    if (!writeReg16(kRegDataLen, len / 2)) {
+      LEP_LOGE("commandSet(%i, %i) write data len failed", moduleId, moduleCommandId);
+      return kUndefinedError;
+    }
+    if (!writeReg(kRegData0, len, data)) {
+      LEP_LOGE("commandSet(%i, %i) write data failed", moduleId, moduleCommandId);
+      return kUndefinedError;
+    }
+    uint16_t commandId = (oemBit ? 0x4000 : 0) | ((moduleId & 0xf) << 8) | ((moduleCommandId & 0x3f) << 2) | (kSet & 0x3);
+    if (!writeReg16(kRegCommandId, commandId)) {
+      LEP_LOGE("commandSet(%i, %i) write command id failed", moduleId, moduleCommandId);
+      return kUndefinedError;
+    }
+
+    return readNonBusyStatus();
   }
 
   FlirLepton::Result FlirLepton::commandRun(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId) {
@@ -205,4 +248,26 @@ bool FlirLepton::begin() {
       dataOut[i] = wire_->read();
     }
     return true; 
+  }
+
+  bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
+    digitalWrite(csPin_, LOW);
+    spi_->beginTransaction(spiSettings_);
+
+    uint16_t id = spi_->transfer16(0);
+    bool isDiscard = ((id >> 8) & 0x0f) == 0x0f;
+    uint16_t crc = spi_->transfer16(0);
+    LEP_LOGI("VoSpi ID 0x%04x, CRC 0x%04x", id, crc);
+    for (size_t i=0; i<videoPacketDataLen_/2; i++) {
+      uint16_t buf = spi_->transfer16(0);
+      if (!isDiscard) {
+      buffer[i*2] = buf >> 8;
+      buffer[i*2+1] = buf & 0xff;
+      }
+    }
+
+    spi_->endTransaction();
+    digitalWrite(csPin_, HIGH);
+
+    return !isDiscard;
   }
