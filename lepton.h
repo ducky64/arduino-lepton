@@ -23,21 +23,21 @@ public:
     kVid = 3,
     kOem = 8,
     kRad = 14,
-  }
+  };
 
   enum CommandType {
     kGet = 0,
     kSet = 1,
     kRun = 2,
-  }
+  };
 
   enum SysCommand {
-    kSysFfcStatus = 0x44;  // GET -> 2
-  }
+    kSysFfcStatus = 0x44,  // GET -> 2
+  };
 
   enum Result {
-    kLepOk = 0
-  }
+    kLepOk = 0,
+  };
 
   // Initializes this class without any hardware operations
   FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset) : 
@@ -55,14 +55,23 @@ public:
 
   // Sends and executes commands to the camera
   // len is in bytes, double the SDK data length in the IDD document
-  bool FlirLepton::commandGet(ModuleId moduleId, uint8_t commandId, uint16_t len, uint8_t *dataOut);
-  bool FlirLepton::commandRun(ModuleId moduleId, uint8_t commandId, uint16_t len, uint8_t *data);
+  bool commandGet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut);
+  bool commandSet(ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *data);
+  bool commandRun(ModuleId moduleId, uint8_t moduleCommandId);
+
+  // Polls until the status register is non-busy, and return the error code.
+  // Comms errors map to -127
+  int8_t readNonBusyStatus();
 
   // Writes data to a 16-bit register, returning success
   bool writeReg16(uint16_t addr, uint16_t data);
+  // Writes len sequential bytes to a register, returning success
+  bool writeReg(uint16_t addr, size_t len, uint8_t* data);
 
   // Reads the contents of a 16-bit register, returning success and placing data in dataOut (on success)
   bool readReg16(uint16_t addr, uint16_t* dataOut);
+  // Reads len sequential bytes from a register, placing the results in dataOut, returning success
+  bool readReg(uint16_t addr, size_t len, uint8_t* dataOut);
 
 protected:
   TwoWire* wire_;
