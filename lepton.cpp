@@ -11,9 +11,17 @@ static const char* TAG = "lepton";
 
 
 // utility conversions
+// note, bits in a 16b word in big-endian order, words in little-endian order
+inline uint64_t bufferToU64(uint8_t* buffer) {
+  return ((uint64_t)buffer[0] << 8) | ((uint64_t)buffer[1] << 0) |
+      ((uint64_t)buffer[2] << 24) | ((uint64_t)buffer[3] << 16) |
+      ((uint64_t)buffer[4] << 40) | ((uint64_t)buffer[5] << 32) |
+      ((uint64_t)buffer[6] << 56) | ((uint64_t)buffer[7] << 48);
+}
+
 inline uint32_t bufferToU32(uint8_t* buffer) {
-  return ((uint32_t)buffer[0] << 24) | ((uint32_t)buffer[1] << 16) |
-      ((uint32_t)buffer[2] << 8) | ((uint32_t)buffer[0]);
+  return ((uint32_t)buffer[0] << 8) | ((uint32_t)buffer[1] << 0) |
+      ((uint32_t)buffer[2] << 24) | ((uint32_t)buffer[3] << 16);
 }
 
 inline uint32_t bufferToU16(uint8_t* buffer) {
@@ -57,19 +65,31 @@ bool FlirLepton::begin() {
       }
     }
 
-    // TODO wait for SYS FFC
+    uint8_t cmdBuffer[8];
+    Result result = commandGet(kSys, 0x08 >> 2, 8, cmdBuffer);
+    if (result != kLepOk) {
+      LEP_LOGE("begin() SYS FLIR Serial status commandGet failed %i", result);
+      return false;
+    }
+    uint64_t flirSerial = bufferToU64(cmdBuffer);
+    LEP_LOGI("begin() read FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
+    if (flirSerial == 0) {  // a sanity check on comms correctness
+      LEP_LOGW("begin() failed sanity check: zero FLIR serial");
+    }
+
     while (true) {
-      uint8_t resultBuffer[4];
-      LEP_LOGI("cmdGet)");
-      if (!commandGet(kSys, 0x44, 4, resultBuffer)) {
-        LEP_LOGE("begin() SYS FFC status commandGet failed");
+      result = commandGet(kSys, 0x44 >> 2, 4, cmdBuffer);
+      if (result != kLepOk) {
+        LEP_LOGE("begin() SYS FFC status commandGet failed %i", result);
+        return false;
       }
-      int32_t ffcStatus = bufferToI32(resultBuffer);
-      LEP_LOGI("begin() SYS FFC <- %i", ffcStatus);
+      int32_t ffcStatus = bufferToI32(cmdBuffer);
+      LEP_LOGD("begin() SYS FFC <- %i", ffcStatus);
       if (ffcStatus == 0) {
         break;
       } else if (ffcStatus < 0) {
         LEP_LOGE("begin() SYS FFC returned error %i", ffcStatus);
+        return false;
       } else {
         delay(1);  // continue waiting
       }

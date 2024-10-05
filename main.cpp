@@ -57,7 +57,7 @@ void setup() {
   pinMode(kPinLedR, OUTPUT);
   digitalWrite(kPinLedR, LOW);
 
-  delay(1000);
+  delay(2000);
   digitalWrite(kPinLedR, HIGH);
 
   spi.begin(kPinLepSck, kPinLepMiso, kPinLepMosi, -1);

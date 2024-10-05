@@ -31,10 +31,6 @@ public:
     kRun = 2,
   };
 
-  enum SysCommand {
-    kSysFfcStatus = 0x44,  // GET -> 2
-  };
-
   enum Result {
     kLepOk = 0,
     kUndefinedError = -127,  // also used here for I2C errors
