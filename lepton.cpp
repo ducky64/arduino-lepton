@@ -136,10 +136,14 @@ bool FlirLepton::begin() {
   }
 
 
-  FlirLepton::Result FlirLepton::enableVsync() {
+  bool FlirLepton::enableVsync() {
     uint8_t buffer[4];
     U32ToBuffer(5, buffer);
-    return commandSet(kOem, 0x54 >> 2, 4, buffer, true);
+    Result result = commandSet(kOem, 0x54 >> 2, 4, buffer, true);
+    if (result != kLepOk) {
+      LEP_LOGW("enableVsync() command returned %i", result);
+    }
+    return result == kLepOk;
   }
 
 
@@ -259,13 +263,18 @@ bool FlirLepton::begin() {
   }
 
   bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
+    size_t requiredBuffer = videoPacketDataLen_ * segmentPacketLen_ * segmentsPerFrame_;
+    if (bufferLen < requiredBuffer) {
+      LEP_LOGE("readVoSpi insufficient buffer, got %i need %i", bufferLen, requiredBuffer);
+      return false;
+    }
+    
     spi_->beginTransaction(kDefaultSpiSettings);
     digitalWrite(csPin_, LOW);
-
     uint16_t id = spi_->transfer16(0);
     bool isDiscard = ((id >> 8) & 0x0f) == 0x0f;
     uint16_t crc = spi_->transfer16(0);
-    LEP_LOGI("VoSpi ID 0x%04x, CRC 0x%04x", id, crc);
+    LEP_LOGD("VoSpi pkt 0x%04x %04x", id, crc);
     spi_->transfer(buffer, videoPacketDataLen_);
     digitalWrite(csPin_, HIGH);
     spi_->endTransaction();

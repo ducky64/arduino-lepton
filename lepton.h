@@ -51,8 +51,17 @@ public:
 
   /** Utility functions
   */
-  FlirLepton::Result enableVsync();
+  // Enable the VSYNC output on GPIO
+  bool enableVsync();
 
+  /** SPI Operations
+   * TODO: move into a separate class to allow more optimization
+   */
+  // Reads VoSpi frame. Must be called regularly to maintain sync.
+  // Returns true if a frame was read (and stored in buffer), otherwise false (eg, discard frame read).
+  bool readVoSpi(size_t bufferLen, uint8_t* buffer);
+
+protected:
   /** I2C Operations 
    */
   // Sends and executes commands to the camera
@@ -75,13 +84,8 @@ public:
   // Reads len sequential bytes from a register, placing the results in dataOut, returning success
   bool readReg(uint16_t addr, size_t len, uint8_t* dataOut);
 
-  /** SPI Operations
-   * TODO: move into a separate class to allow more optimization
+  /** State and configuration variables
    */
-  // Reads VoSpi frame
-  bool readVoSpi(size_t bufferLen, uint8_t* buffer);
-
-protected:
   TwoWire* wire_;
   SPIClass* spi_;
   // SPISettings spiSettings_;  // TODO kDefaultSpiSettings seems to be unavailable until after construction so this can't be init'd
