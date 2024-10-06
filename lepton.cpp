@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(16000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -268,29 +268,35 @@ bool FlirLepton::begin() {
       LEP_LOGE("readVoSpi insufficient buffer, got %i need %i", bufferLen, requiredBuffer);
       return false;
     }
-    
+
+    uint64_t lastPktUs = micros();
+
     spi_->beginTransaction(kDefaultSpiSettings);
     digitalWrite(csPin_, LOW);
 
     bool invalidate = false;
     for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
+      bool discardSegment = false;
       for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-        uint16_t id = spi_->transfer16(0);
-        uint16_t crc = spi_->transfer16(0);
-        spi_->transfer(buffer, videoPacketDataLen_);  // always read a whole packet
+        delayMicroseconds(10);
+        uint8_t header[4];
+        spi_->transfer(header, 4);
+        uint16_t id = ((uint16_t)header[0] << 8) | header[1];
+        uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
 
-        if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet, chomp
-          packet = -1;
-          segment = 1;
+        Serial.printf("%04x %04x %i\n", id, crc, micros() - lastPktUs);
+        lastPktUs = micros();
+
+        uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
+        spi_->transfer(bufferPtr, 160);  // always read a whole packet
+
+        if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet
+          packet -= 1;
           continue;
         }
         uint16_t packetNum = id & 0xfff;
         uint8_t ttt = (id >> 12) & 0x7;
 
-        if (packetNum == packet - 1) {  // sometimes a packet gets duplicated
-          packet--;
-          continue;
-        }
         if (packetNum != packet) {
           LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
@@ -299,21 +305,26 @@ bool FlirLepton::begin() {
           }
           break;
         }
-        if (packetNum == 20 && ttt != segment) {
-          LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
-          invalidate = true;
-          if (readErrorOut != nullptr) {
-            *readErrorOut = true;
+        if (packetNum == 20) {
+          if (ttt == 0) {
+            discardSegment = true;
+          } else if (ttt != segment) {
+            LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
+            invalidate = true;
+            if (readErrorOut != nullptr) {
+              *readErrorOut = true;
+            }
+            break;
           }
-          break;
         }
-
-        buffer += videoPacketDataLen_;
+      }
+      if (discardSegment) {
+        segment--;
       }
     }
 
     digitalWrite(csPin_, HIGH);
     spi_->endTransaction();
-
+    
     return !invalidate;
   }

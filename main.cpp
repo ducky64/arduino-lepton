@@ -49,9 +49,10 @@ SPIClass spi(HSPI);
 TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
-uint8_t vospiBuf[160*120*2];
+uint8_t vospiBuf[160*120*3];  // up to RGB888
 
 void setup() {
+  Serial.begin(115200);
   esp_log_level_set("*", ESP_LOG_INFO);
   esp_log_level_set("lepton", ESP_LOG_DEBUG);
 
@@ -70,19 +71,26 @@ void setup() {
   ESP_LOGI("main", "Start init");
   pinMode(kPinLepVsync, INPUT);
   bool beginResult = lepton.begin();
+
   ESP_LOGI("main", "Lepton init << %i", beginResult);
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
   ESP_LOGI("main", "Setup complete");
 
+  while (digitalRead(kPinLepVsync) == LOW);
+
+  bool first = true;
   while (true) {
     bool readError = false;
     bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &readError);
 
-    if (readResult) {
+    if (readResult || readError || first) {
       const int kIncr = 16;
-      for (int i=0; i<10; i++) {
+      for (int i=0; i<20; i++) {
+        if (i == 10) {
+          ESP_LOGI("main", "");
+        }
         ESP_LOGI("main", "  %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
             vospiBuf[i*kIncr+0], vospiBuf[i*kIncr+1], vospiBuf[i*kIncr+2], vospiBuf[i*kIncr+3],
             vospiBuf[i*kIncr+4], vospiBuf[i*kIncr+5], vospiBuf[i*kIncr+6], vospiBuf[i*kIncr+7],
@@ -90,12 +98,19 @@ void setup() {
             vospiBuf[i*kIncr+12], vospiBuf[i*kIncr+13], vospiBuf[i*kIncr+14], vospiBuf[i*kIncr+15]);
       }
     }
+    first = false;
     if (readError) {
       ESP_LOGW("main", "Read error, re-establishing sync");
-      delay(185);  // establish sync
+      // delay(185);  // establish sync
+      delay(200);  // establish sync
+      while (digitalRead(kPinLepVsync) == LOW);
+      first = true;
     }
 
     if (readResult) {
+      break;
+    }
+    if (millis() > 10000) {
       break;
     }
   }
