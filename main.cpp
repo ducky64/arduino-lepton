@@ -87,6 +87,7 @@ void setup() {
 
     if (readResult || readError || first) {
       const int kIncr = 16;
+      ESP_LOGI("main", "Res=%i, err=%i", readResult, readError);
       for (int i=0; i<20; i++) {
         if (i == 10) {
           ESP_LOGI("main", "");

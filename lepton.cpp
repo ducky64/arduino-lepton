@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(10000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -54,6 +54,7 @@ bool FlirLepton::begin() {
     pinMode(csPin_, OUTPUT);
     digitalWrite(csPin_, HIGH);
 
+    digitalWrite(resetPin_, LOW);  // assert RESET
     pinMode(resetPin_, OUTPUT);
     digitalWrite(resetPin_, LOW);  // assert RESET
     delay(1);  // wait >5000 clk periods @ 25MHz MCLK, Lepton Eng Datasheet Figure 6
@@ -284,19 +285,24 @@ bool FlirLepton::begin() {
         uint16_t id = ((uint16_t)header[0] << 8) | header[1];
         uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
 
-        Serial.printf("%04x %04x %i\n", id, crc, micros() - lastPktUs);
+        // Serial.printf("%04x %04x %i\n", id, crc, micros() - lastPktUs);
         lastPktUs = micros();
 
         uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
         spi_->transfer(bufferPtr, 160);  // always read a whole packet
 
         if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet
-          packet -= 1;
+          packet--;
           continue;
         }
         uint16_t packetNum = id & 0xfff;
         uint8_t ttt = (id >> 12) & 0x7;
 
+        if (packet == 0 && bufferPtr[0] == 0x0f) {
+          spi_->transfer(header, 4);  // desync'd, read up extra bytes
+          packet--;
+          continue;
+        }
         if (packetNum != packet) {
           LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
