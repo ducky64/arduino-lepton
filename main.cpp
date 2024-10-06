@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "lepton.h"
+#include "lepton_util.h"
 
 // Unused (so far) pinmaps from HDL
 // touch_duck=TOUCH6, 6,
@@ -80,14 +81,13 @@ void setup() {
 
   while (digitalRead(kPinLepVsync) == LOW);
 
-  bool first = true;
   while (true) {
     bool readError = false;
     bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &readError);
 
-    if (readResult || readError || first) {
+    ESP_LOGI("main", "Res=%i, err=%i", readResult, readError);
+    if (readError) {
       const int kIncr = 16;
-      ESP_LOGI("main", "Res=%i, err=%i", readResult, readError);
       for (int i=0; i<20; i++) {
         if (i == 10) {
           ESP_LOGI("main", "");
@@ -98,20 +98,25 @@ void setup() {
             vospiBuf[i*kIncr+8], vospiBuf[i*kIncr+9], vospiBuf[i*kIncr+10], vospiBuf[i*kIncr+11],
             vospiBuf[i*kIncr+12], vospiBuf[i*kIncr+13], vospiBuf[i*kIncr+14], vospiBuf[i*kIncr+15]);
       }
-    }
-    first = false;
-    if (readError) {
+
       ESP_LOGW("main", "Read error, re-establishing sync");
       // delay(185);  // establish sync
       delay(200);  // establish sync
       while (digitalRead(kPinLepVsync) == LOW);
-      first = true;
+    }
+    if (readResult) {
+      uint16_t min, max;
+      u16_frame_min_max(vospiBuf, 160, 120, &min, &max);
+
+      char line[161];
+      for (uint16_t i=0; i<120; i++) {
+        u16_frame_line_to_str(vospiBuf, 160, i, line, min, max);
+        Serial.println(line);
+      }
+      Serial.println("");
     }
 
-    if (readResult) {
-      break;
-    }
-    if (millis() > 10000) {
+    if (millis() > 20000) {
       break;
     }
   }
