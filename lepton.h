@@ -59,7 +59,8 @@ public:
    */
   // Reads VoSpi frame. Must be called regularly to maintain sync.
   // Returns true if a frame was read (and stored in buffer), otherwise false (eg, discard frame read).
-  bool readVoSpi(size_t bufferLen, uint8_t* buffer);
+  // buffer may still be (over)written to even if no video data is present.
+  bool readVoSpi(size_t bufferLen, uint8_t* buffer, bool* readErrorOut);
 
 protected:
   /** I2C Operations 
@@ -92,7 +93,7 @@ protected:
   int csPin_, resetPin_;
 
   size_t videoPacketDataLen_ = 160;  // bytes, 160 in Raw14 mode (default), 240 in RGB888 mode
-  size_t segmentPacketLen_ = 60;  // Lepton 3.5, telemetry disabled
+  size_t packetsPerSegment_ = 60;  // Lepton 3.5, telemetry disabled
   size_t segmentsPerFrame_ = 4;
 
   static const SPISettings kDefaultSpiSettings;

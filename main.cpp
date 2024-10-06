@@ -49,6 +49,7 @@ SPIClass spi(HSPI);
 TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
+uint8_t vospiBuf[160*120*2];
 
 void setup() {
   esp_log_level_set("*", ESP_LOG_INFO);
@@ -75,12 +76,9 @@ void setup() {
 
   ESP_LOGI("main", "Setup complete");
 
-  lepton.initSync();
-  while (digitalRead(kPinLepVsync) == LOW);  // alternatively, wait for new frame
-
   while (true) {
-    uint8_t vospiBuf[160];
-    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf);
+    bool readError = false;
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &readError);
 
     if (readResult) {
       const int kIncr = 16;
@@ -92,7 +90,10 @@ void setup() {
             vospiBuf[i*kIncr+12], vospiBuf[i*kIncr+13], vospiBuf[i*kIncr+14], vospiBuf[i*kIncr+15]);
       }
     }
-    // delay(185);  // establish sync
+    if (readError) {
+      ESP_LOGW("main", "Read error, re-establishing sync");
+      delay(185);  // establish sync
+    }
 
     if (readResult) {
       break;

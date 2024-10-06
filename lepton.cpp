@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(16000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -262,8 +262,8 @@ bool FlirLepton::begin() {
     return true; 
   }
 
-  bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
-    size_t requiredBuffer = videoPacketDataLen_ * segmentPacketLen_ * segmentsPerFrame_;
+  bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* readErrorOut) {
+    size_t requiredBuffer = videoPacketDataLen_ * packetsPerSegment_ * segmentsPerFrame_;
     if (bufferLen < requiredBuffer) {
       LEP_LOGE("readVoSpi insufficient buffer, got %i need %i", bufferLen, requiredBuffer);
       return false;
@@ -271,13 +271,49 @@ bool FlirLepton::begin() {
     
     spi_->beginTransaction(kDefaultSpiSettings);
     digitalWrite(csPin_, LOW);
-    uint16_t id = spi_->transfer16(0);
-    bool isDiscard = ((id >> 8) & 0x0f) == 0x0f;
-    uint16_t crc = spi_->transfer16(0);
-    LEP_LOGD("VoSpi pkt 0x%04x %04x", id, crc);
-    spi_->transfer(buffer, videoPacketDataLen_);
+
+    bool invalidate = false;
+    for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
+      for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
+        uint16_t id = spi_->transfer16(0);
+        uint16_t crc = spi_->transfer16(0);
+        spi_->transfer(buffer, videoPacketDataLen_);  // always read a whole packet
+
+        if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet, chomp
+          packet = -1;
+          segment = 1;
+          continue;
+        }
+        uint16_t packetNum = id & 0xfff;
+        uint8_t ttt = (id >> 12) & 0x7;
+
+        if (packetNum == packet - 1) {  // sometimes a packet gets duplicated
+          packet--;
+          continue;
+        }
+        if (packetNum != packet) {
+          LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
+          invalidate = true;
+          if (readErrorOut != nullptr) {
+            *readErrorOut = true;
+          }
+          break;
+        }
+        if (packetNum == 20 && ttt != segment) {
+          LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
+          invalidate = true;
+          if (readErrorOut != nullptr) {
+            *readErrorOut = true;
+          }
+          break;
+        }
+
+        buffer += videoPacketDataLen_;
+      }
+    }
+
     digitalWrite(csPin_, HIGH);
     spi_->endTransaction();
 
-    return !isDiscard;
+    return !invalidate;
   }
