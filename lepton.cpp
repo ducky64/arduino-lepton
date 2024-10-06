@@ -271,6 +271,9 @@ bool FlirLepton::begin() {
     }
 
     spi_->beginTransaction(kDefaultSpiSettings);
+    // spi_->setFrequency(20000000);  // alternate approach without transactions
+    // spi_->setBitOrder(MSBFIRST);
+    // spi_->setDataMode(SPI_MODE3);
     digitalWrite(csPin_, LOW);
 
     bool invalidate = false;
@@ -281,6 +284,8 @@ bool FlirLepton::begin() {
 
         uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
 
+        // uint16_t id = spi_->transfer16(0);  // broken for some reason
+        // uint16_t crc = spi_->transfer16(0);
         uint8_t header[4];
         spi_->transfer(header, 4);
         spi_->transfer(bufferPtr, 160);  // always read a whole packet
