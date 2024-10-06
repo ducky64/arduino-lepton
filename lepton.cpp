@@ -293,8 +293,13 @@ bool FlirLepton::begin() {
         uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
 
         if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet
-          packet--;
-          continue;
+          if (packet == 0 && segment == 1) {  // if no frame in progress, return
+            invalidate = true;
+            break;
+          } else {  // otherwise just ignore it - may show up in the middle of a transmission
+            packet--;
+            continue;
+          }
         }
         uint16_t packetNum = id & 0xfff;
         uint8_t ttt = (id >> 12) & 0x7;
