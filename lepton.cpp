@@ -270,8 +270,6 @@ bool FlirLepton::begin() {
       return false;
     }
 
-    uint64_t lastPktUs = micros();
-
     spi_->beginTransaction(kDefaultSpiSettings);
     digitalWrite(csPin_, LOW);
 
@@ -279,14 +277,12 @@ bool FlirLepton::begin() {
     for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
       bool discardSegment = false;
       for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-        delayMicroseconds(10);
+        delayMicroseconds(15);  // this is the magic
+
         uint8_t header[4];
         spi_->transfer(header, 4);
         uint16_t id = ((uint16_t)header[0] << 8) | header[1];
         uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
-
-        // Serial.printf("%04x %04x %i\n", id, crc, micros() - lastPktUs);
-        lastPktUs = micros();
 
         uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
         spi_->transfer(bufferPtr, 160);  // always read a whole packet
@@ -298,11 +294,6 @@ bool FlirLepton::begin() {
         uint16_t packetNum = id & 0xfff;
         uint8_t ttt = (id >> 12) & 0x7;
 
-        if (packet == 0 && bufferPtr[0] == 0x0f) {
-          spi_->transfer(header, 4);  // desync'd, read up extra bytes
-          packet--;
-          continue;
-        }
         if (packetNum != packet) {
           LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
