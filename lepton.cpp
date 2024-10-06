@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(10000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -277,15 +277,15 @@ bool FlirLepton::begin() {
     for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
       bool discardSegment = false;
       for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-        delayMicroseconds(15);  // this is the magic
+        delayMicroseconds(5);  // this is the magic
+
+        uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
 
         uint8_t header[4];
         spi_->transfer(header, 4);
+        spi_->transfer(bufferPtr, 160);  // always read a whole packet
         uint16_t id = ((uint16_t)header[0] << 8) | header[1];
         uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
-
-        uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
-        spi_->transfer(bufferPtr, 160);  // always read a whole packet
 
         if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet
           packet--;
