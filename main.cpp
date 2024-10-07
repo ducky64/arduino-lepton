@@ -72,8 +72,13 @@ void setup() {
   ESP_LOGI("main", "Start init");
   pinMode(kPinLepVsync, INPUT);
   bool beginResult = lepton.begin();
-
   ESP_LOGI("main", "Lepton init << %i", beginResult);
+
+  ESP_LOGI("main", "Lepton wait ready ...");
+  while (!lepton.isReady()) {
+    delay(10);
+  }
+
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
@@ -85,7 +90,6 @@ void setup() {
     bool readError = false;
     bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &readError);
 
-    ESP_LOGI("main", "Res=%i, err=%i", readResult, readError);
     if (readError) {
       // const int kIncr = 16;
       // for (int i=0; i<20; i++) {

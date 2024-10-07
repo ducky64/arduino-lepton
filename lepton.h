@@ -49,6 +49,9 @@ public:
   // Does not touch Wire and Spi.
   void end();
 
+  // Returns true if the device has booted and is ready for operation.
+  bool isReady();
+
   /** Utility functions
   */
   // Enable the VSYNC output on GPIO
@@ -92,6 +95,16 @@ protected:
   // SPISettings spiSettings_;  // TODO kDefaultSpiSettings seems to be unavailable until after construction so this can't be init'd
   int csPin_, resetPin_;
 
+  int resetMillis_;  // millis() at which the device exited reset
+  bool i2cReady_ = false;  // if sufficient millis() has elapsed since reset for I2C to be up
+
+  uint64_t flirSerial_ = 0;
+  char flirPartNum_[33] = {0};
+  uint8_t flirSoftwareVersion_[8];
+
+  bool metadataRead_ = false;  // true when the above fields have been attempted to be read
+
+  uint8_t bytesPerPixel_ = 2;
   size_t videoPacketDataLen_ = 160;  // bytes, 160 in Raw14 mode (default), 240 in RGB888 mode
   size_t packetsPerSegment_ = 60;  // Lepton 3.5, telemetry disabled
   size_t segmentsPerFrame_ = 4;

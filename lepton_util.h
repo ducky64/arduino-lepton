@@ -10,6 +10,10 @@
 // outStr must be length of at least width + 1 (to include the null terminator)
 void u16_frame_line_to_str(uint8_t* frame, uint16_t width, uint16_t line, char* outStr, uint16_t min=0, uint16_t max=65535) {
   uint8_t* linePtr = frame + (line * width * 2);
+  uint16_t range = max - min;
+  if (range == 0) {  // avoid division by zero
+    range = 1;
+  }
   for (uint16_t i=0; i<width; i++) {
     uint16_t pixel = ((uint16_t)(*linePtr) << 8) | *(linePtr+1);
     if (pixel < min) {
@@ -18,7 +22,7 @@ void u16_frame_line_to_str(uint8_t* frame, uint16_t width, uint16_t line, char* 
       pixel = max;
     }
     linePtr += 2;
-    *outStr = '0' + (uint32_t)(pixel - min) * 9 / (max - min);
+    *outStr = '0' + (uint32_t)(pixel - min) * 9 / range;
     outStr++;
   }
   *outStr = 0;  // null terminator

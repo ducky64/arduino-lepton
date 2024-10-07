@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(16000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -60,71 +60,98 @@ bool FlirLepton::begin() {
     delay(1);  // wait >5000 clk periods @ 25MHz MCLK, Lepton Eng Datasheet Figure 6
     digitalWrite(resetPin_, HIGH);
 
-    delay(950); // minimum wait before accessing I2C, Lepton Software IDD
+    resetMillis_ = millis();
+    i2cReady_ = false;
+    return true;
+  }
 
-    // TODO timeout
-    while (true) {  // wait for BOOT status bit and not busy
-      uint16_t statusData;
-      if (!readReg16(kRegStatus, &statusData)) {
-        LEP_LOGE("begin() read status failed");
-        return false;
-      }
-      LEP_LOGD("begin() status <- 0x%04x", statusData);
-
-      if (statusData & (1 << 2) && !(statusData & 1)) {
-        if (!(statusData & (1 << 1))) {
-          LEP_LOGE("begin() unexpected boot mode bit");
-          return false;
-        }
-        break;
-      } else {  // continue waiting for boot
-        delay(100);
-      }
-    }
-
-    uint8_t cmdBuffer[8];
-    Result result = commandGet(kSys, 0x08 >> 2, 8, cmdBuffer);
-    if (result != kLepOk) {
-      LEP_LOGE("begin() SYS FLIR Serial status commandGet failed %i", result);
+  bool FlirLepton::isReady() {
+    if (!i2cReady_ && millis() < resetMillis_ + 950) {  // minimum wait before accessing I2C, Lepton Software IDD
       return false;
     }
-    uint64_t flirSerial = bufferToU64(cmdBuffer);
-    LEP_LOGD("begin() read FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
-    if (flirSerial == 0) {  // a sanity check on comms correctness
-      LEP_LOGW("begin() failed sanity check: zero FLIR serial");
+
+    uint16_t statusData;
+    if (!readReg16(kRegStatus, &statusData)) {
+      LEP_LOGE("isReady() read status failed");
+      return false;
+    }
+    LEP_LOGD("isReady() status <- 0x%04x", statusData);
+
+    if (statusData & (1 << 2) && !(statusData & 1)) {
+      if (!(statusData & (1 << 1))) {
+        LEP_LOGE("isReady() unexpected boot mode bit");
+        return false;
+      }
+    } else {
+      return false;  // not yet ready
     }
 
-    while (true) {
-      result = commandGet(kSys, 0x44 >> 2, 4, cmdBuffer);
-      if (result != kLepOk) {
-        LEP_LOGE("begin() SYS FFC status commandGet failed %i", result);
-        return false;
-      }
-      int32_t ffcStatus = bufferToI32(cmdBuffer);
-      LEP_LOGD("begin() SYS FFC <- %i", ffcStatus);
-      if (ffcStatus == 0) {
-        break;
-      } else if (ffcStatus < 0) {
-        LEP_LOGE("begin() SYS FFC returned error %i", ffcStatus);
-        return false;
-      } else {
-        delay(1);  // continue waiting
-      }
-    }
+    Result result;
+    uint8_t cmdBuffer[32];
 
-    while (true) {
-      result = commandGet(kSys, 0x04 >> 2, 4, cmdBuffer);
+    if (!metadataRead_) {  // read out serial
+      result = commandGet(kSys, 0x08 >> 2, 8, cmdBuffer);
       if (result != kLepOk) {
-        LEP_LOGE("begin() SYS status commandGet failed %i", result);
+        LEP_LOGE("isReady() SYS FLIR Serial commandGet failed %i", result);
         return false;
       }
-      int32_t sysStatus = bufferToI32(cmdBuffer);
-      LEP_LOGD("begin() SYS status <- %i", sysStatus);
-      if (sysStatus == 0) {
-        break;
-      } else {
-        delay(1);  // continue waiting
+      uint64_t flirSerial = bufferToU64(cmdBuffer);
+      LEP_LOGI("isReady() SYS FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
+      if (flirSerial == 0) {  // a sanity check on comms correctness
+        LEP_LOGW("isReady() failed sanity check: zero FLIR serial");
       }
+
+      size_t kPartNumberLen = 16;  // 32 in the IDD, but only 16 registers to read out of
+      result = commandGet(kOem, 0x1c >> 2, kPartNumberLen, cmdBuffer, true);
+      if (result != kLepOk) {
+        LEP_LOGE("isReady() OEM FLIR Part Number commandGet failed %i", result);
+        return false;
+      }
+      // result seems in the wrong endianness
+      for (size_t i=0; i<kPartNumberLen/2; i++) {
+        flirPartNum_[i*2] = cmdBuffer[i*2 + 1];
+        flirPartNum_[i*2 + 1] = cmdBuffer[i*2];
+      }
+      LEP_LOGI("isReady() OEM FLIR Part Number = '%s'", flirPartNum_);
+
+      result = commandGet(kOem, 0x20 >> 2, 8, flirSoftwareVersion_, true);
+      if (result != kLepOk) {
+        LEP_LOGE("isReady() OEM Camera Software Revision commandGet failed %i", result);
+        return false;
+      }
+      LEP_LOGI("isReady() OEM Camera Software Revision = GPP = 0x %02x %02x %02x, DSP = 0x %02x %02x %02x",
+          flirSoftwareVersion_[0], flirSoftwareVersion_[1], flirSoftwareVersion_[2], 
+          flirSoftwareVersion_[3], flirSoftwareVersion_[4], flirSoftwareVersion_[5]);
+
+      metadataRead_ = true;
+    }
+    // guaranteed to have read out metadata by this point
+
+    // result = commandGet(kSys, 0x44 >> 2, 4, cmdBuffer);
+    // if (result != kLepOk) {
+    //   LEP_LOGE("isReady() SYS FFC status commandGet failed %i", result);
+    //   return false;
+    // }
+    // int32_t ffcStatus = bufferToI32(cmdBuffer);
+    // LEP_LOGD("isReady() SYS FFC <- %i", ffcStatus);
+    // if (ffcStatus == 0) {  // continue
+    // } else if (ffcStatus < 0) {
+    //   LEP_LOGE("isReady() SYS FFC returned error %i", ffcStatus);
+    //   return false;
+    // } else {
+    //   return false;
+    // }
+
+    result = commandGet(kSys, 0x04 >> 2, 4, cmdBuffer);
+    if (result != kLepOk) {
+      LEP_LOGE("isReady() SYS status commandGet failed %i", result);
+      return false;
+    }
+    int32_t sysStatus = bufferToI32(cmdBuffer);
+    LEP_LOGD("isReady() SYS status <- %i", sysStatus);
+    if (sysStatus == 0) {  // continue
+    } else {
+      return false;
     }
 
     return true;
@@ -280,7 +307,7 @@ bool FlirLepton::begin() {
     for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
       bool discardSegment = false;
       for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-        delayMicroseconds(5);  // this is the magic
+        delayMicroseconds(10);  // this is the magic
 
         uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
 
