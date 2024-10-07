@@ -4,7 +4,7 @@
 
 
 // Class constants
-const SPISettings FlirLepton::kDefaultSpiSettings(16000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
+const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3);  // 20MHz max for VoSPI, CPOL=1, CPHA=1
 
 
 // Override these to use some other logging framework
@@ -127,29 +127,17 @@ bool FlirLepton::begin() {
     }
     // guaranteed to have read out metadata by this point
 
-    // result = commandGet(kSys, 0x44 >> 2, 4, cmdBuffer);
-    // if (result != kLepOk) {
-    //   LEP_LOGE("isReady() SYS FFC status commandGet failed %i", result);
-    //   return false;
-    // }
-    // int32_t ffcStatus = bufferToI32(cmdBuffer);
-    // LEP_LOGD("isReady() SYS FFC <- %i", ffcStatus);
-    // if (ffcStatus == 0) {  // continue
-    // } else if (ffcStatus < 0) {
-    //   LEP_LOGE("isReady() SYS FFC returned error %i", ffcStatus);
-    //   return false;
-    // } else {
-    //   return false;
-    // }
-
-    result = commandGet(kSys, 0x04 >> 2, 4, cmdBuffer);
+    result = commandGet(kSys, 0x44 >> 2, 4, cmdBuffer);
     if (result != kLepOk) {
-      LEP_LOGE("isReady() SYS status commandGet failed %i", result);
+      LEP_LOGE("isReady() SYS FFC status commandGet failed %i", result);
       return false;
     }
-    int32_t sysStatus = bufferToI32(cmdBuffer);
-    LEP_LOGD("isReady() SYS status <- %i", sysStatus);
-    if (sysStatus == 0) {  // continue
+    int32_t ffcStatus = bufferToI32(cmdBuffer);
+    LEP_LOGD("isReady() SYS FFC <- %i", ffcStatus);
+    if (ffcStatus == 0) {  // ready, continue with init
+    } else if (ffcStatus < 0) {
+      LEP_LOGE("isReady() SYS FFC returned error %i", ffcStatus);
+      return false;
     } else {
       return false;
     }
@@ -332,7 +320,8 @@ bool FlirLepton::begin() {
         uint8_t ttt = (id >> 12) & 0x7;
 
         if (packetNum != packet) {
-          LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
+          // desync happens regularly, the print affects timing and is off by default
+          LEP_LOGD("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
           if (readErrorOut != nullptr) {
             *readErrorOut = true;
@@ -343,7 +332,7 @@ bool FlirLepton::begin() {
           if (ttt == 0) {
             discardSegment = true;
           } else if (ttt != segment) {
-            LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
+            LEP_LOGD("unexpected ttt %i, expected %i", ttt, segment);
             invalidate = true;
             if (readErrorOut != nullptr) {
               *readErrorOut = true;

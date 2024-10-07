@@ -105,7 +105,6 @@ void setup() {
 
       ESP_LOGW("main", "Read error, re-establishing sync");
       delay(185);  // establish sync
-      // delay(200);  // establish sync
       // while (digitalRead(kPinLepVsync) == LOW);
     }
     if (readResult) {
