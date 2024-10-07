@@ -1,5 +1,3 @@
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
-
 #include "lepton.h"
 
 
@@ -9,6 +7,7 @@ const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3)
 
 // Override these to use some other logging framework
 static const char* TAG = "lepton";
+#define LEP_LOGV(...) ESP_LOGV(TAG, __VA_ARGS__)
 #define LEP_LOGD(...) ESP_LOGD(TAG, __VA_ARGS__)
 #define LEP_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
 #define LEP_LOGW(...) ESP_LOGW(TAG, __VA_ARGS__)
