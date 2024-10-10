@@ -33,3 +33,5 @@
 
 # PIO temporary and output files
 .pio
+
+WifiConfig.h

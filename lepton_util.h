@@ -33,7 +33,7 @@ void u16_frame_min_max(uint8_t* frame, uint16_t width, uint16_t height, uint16_t
   uint16_t min = 65535, max = 0;
   for (uint16_t y=0; y<height; y++) {
     for (uint16_t x=0; x<width; x++) {
-      uint16_t pixel = ((uint16_t)frame[2*(y*width+x)] << 8) | frame[2*(y*width+x)];
+      uint16_t pixel = ((uint16_t)frame[2*(y*width+x)] << 8) | frame[2*(y*width+x) + 1];
       if (pixel < min) {
         min = pixel;
       }
