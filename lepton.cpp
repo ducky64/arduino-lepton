@@ -320,7 +320,7 @@ bool FlirLepton::begin() {
 
         if (packetNum != packet) {
           // desync can happen, the print affects timing and is off by default
-          LEP_LOGV("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
+          LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
           if (readErrorOut != nullptr) {
             *readErrorOut = true;
@@ -331,7 +331,7 @@ bool FlirLepton::begin() {
           if (ttt == 0) {
             discardSegment = true;
           } else if (ttt != segment) {
-            LEP_LOGV("unexpected ttt %i, expected %i", ttt, segment);
+            LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
             invalidate = true;
             if (readErrorOut != nullptr) {
               *readErrorOut = true;

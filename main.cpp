@@ -55,8 +55,8 @@ SPIClass spi(HSPI);
 TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
-uint8_t vospiBuf[160*120*3];  // up to RGB888
-uint8_t frame[160*120*2];
+uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
+uint8_t bufferWriteIndex = 0;  // buffer being written to
 
 
 WebServer server(80);
@@ -66,8 +66,7 @@ const char kJpgHeader[] = "HTTP/1.1 200 OK\r\n" \
                           "Content-disposition: inline; filename=capture.jpg\r\n" \
                           "Content-type: image/jpeg\r\n\r\n";
 const int kJpgHeaderLen= strlen(kJpgHeader);
-uint8_t jpegBuf[65536];
-// uint8_t jpegBuf[131072];
+uint8_t jpegBuf[32768];
 JPEGENC jpgenc;
 
 void handle_jpg(void) {
@@ -90,7 +89,7 @@ void handle_jpg(void) {
   }
   
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.addFrame(&enc, frame, 160);
+    rc = jpgenc.addFrame(&enc, vospiBuf[(bufferWriteIndex+1) % 2], 160);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "addFrame error %i", rc);
     }
@@ -156,6 +155,7 @@ void setup() {
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
+  digitalWrite(kPinLedR, LOW);
   ESP_LOGI("main", "Setup complete");
 
   // while (digitalRead(kPinLepVsync) == LOW);
@@ -169,7 +169,7 @@ void setup() {
 
 void loop() {
   bool readError = false;
-  bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &readError);
+  bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &readError);
 
   if (readError) {
     // const int kIncr = 16;
@@ -189,26 +189,33 @@ void loop() {
     // while (digitalRead(kPinLepVsync) == LOW);
   }
 
-  size_t height = 120, width = 160;
   if (readResult) {
+    digitalWrite(kPinLedR, !digitalRead(kPinLedR));
+
     uint16_t min, max;
-    u16_frame_min_max(vospiBuf, 160, 120, &min, &max);
+    u16_frame_min_max(vospiBuf[bufferWriteIndex], 160, 120, &min, &max);
     uint16_t range = max - min;
     if (range == 0) {  // avoid division by zero
+      ESP_LOGW("main", "empty thermal image");
       range = 1;
     }
 
+    // flip active buffer
+    uint8_t lastBuf = bufferWriteIndex;
+    bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+
     // really jank AGC
+    const size_t height = 120, width = 160;
     for (uint16_t y=0; y<height; y++) {
       for (uint16_t x=0; x<width; x++) {
-        uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
+        uint16_t pixel = ((uint16_t)vospiBuf[lastBuf][2*(y*width+x)] << 8) | vospiBuf[lastBuf][2*(y*width+x) + 1];
         
         pixel = (uint32_t)(pixel - min) * 255 / range;
-        frame[(y*width+x)] = pixel;
+        vospiBuf[lastBuf][y*width+x] = pixel;
 
         // pixel = (uint32_t)(pixel - min) * 65535 / range;
-        // frame[2*(y*width+x)] = pixel >> 8;
-        // frame[2*(y*width+x) + 1] = pixel & 0xff;
+        // vospiBuf[lastBuf][2*(y*width+x)] = pixel >> 8;
+        // vospiBuf[lastBuf][2*(y*width+x) + 1] = pixel & 0xff;
       }
     }
   }
