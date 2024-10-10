@@ -56,6 +56,7 @@ TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
 uint8_t vospiBuf[160*120*3];  // up to RGB888
+uint8_t frame[160*120*2];
 
 
 WebServer server(80);
@@ -65,24 +66,44 @@ const char kJpgHeader[] = "HTTP/1.1 200 OK\r\n" \
                           "Content-disposition: inline; filename=capture.jpg\r\n" \
                           "Content-type: image/jpeg\r\n\r\n";
 const int kJpgHeaderLen= strlen(kJpgHeader);
-// uint8_t jpegBuf[65536];
-uint8_t jpegBuf[131072];
+uint8_t jpegBuf[65536];
+// uint8_t jpegBuf[131072];
 JPEGENC jpgenc;
 
 void handle_jpg(void) {
   WiFiClient client = server.client();
+  if (!client.connected()) return;
 
   JPEGENCODE enc;
-  jpgenc.open(jpegBuf, sizeof(jpegBuf));
-  jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_GRAYSCALE, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
-  // jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_RGB565, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
-  jpgenc.addFrame(&enc, vospiBuf, 160 * 2);
-  size_t encodedLen = jpgenc.close();
+  int rc;
+  rc = jpgenc.open(jpegBuf, sizeof(jpegBuf));
+  if (rc != JPEGE_SUCCESS) {
+    ESP_LOGE("jpg", "Open error %i", rc);
+  }
+
+  if (rc == JPEGE_SUCCESS) {
+    rc = jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_GRAYSCALE, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    // jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_RGB565, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    if (rc != JPEGE_SUCCESS) {
+      ESP_LOGE("jpg", "encodeBegin error %i", rc);
+    }
+  }
   
-  if (!client.connected()) return;
-  client.write(kJpgHeader, kJpgHeaderLen);
-  client.write((char *)jpegBuf, encodedLen);
-  ESP_LOGI("main", "JPG created %i B", encodedLen);
+  if (rc == JPEGE_SUCCESS) {
+    rc = jpgenc.addFrame(&enc, frame, 160);
+    if (rc != JPEGE_SUCCESS) {
+      ESP_LOGE("jpg", "addFrame error %i", rc);
+    }
+  }
+  
+  if (rc == JPEGE_SUCCESS) {
+    size_t encodedLen = jpgenc.close();
+    ESP_LOGI("main", "JPG created %i B", encodedLen);
+    client.write(kJpgHeader, kJpgHeaderLen);
+    client.write(jpegBuf, encodedLen);
+  } else {
+    server.send(200, "text / plain", "Error");
+  }
 }
 
 
@@ -167,6 +188,8 @@ void loop() {
     delay(185);  // establish sync
     // while (digitalRead(kPinLepVsync) == LOW);
   }
+
+  size_t height = 120, width = 160;
   if (readResult) {
     uint16_t min, max;
     u16_frame_min_max(vospiBuf, 160, 120, &min, &max);
@@ -176,23 +199,18 @@ void loop() {
     }
 
     // really jank AGC
-    size_t height = 120, width = 160;
-    uint8_t* frame = vospiBuf;
     for (uint16_t y=0; y<height; y++) {
       for (uint16_t x=0; x<width; x++) {
-        uint16_t pixel = ((uint16_t)frame[2*(y*width+x)] << 8) | frame[2*(y*width+x) + 1];
-        pixel = (uint32_t)(pixel - min) * 65535 / range;
-        frame[2*(y*width+x)] = pixel >> 8;
-        frame[2*(y*width+x) + 1] = pixel & 0xff;
+        uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
+        
+        pixel = (uint32_t)(pixel - min) * 255 / range;
+        frame[(y*width+x)] = pixel;
+
+        // pixel = (uint32_t)(pixel - min) * 65535 / range;
+        // frame[2*(y*width+x)] = pixel >> 8;
+        // frame[2*(y*width+x) + 1] = pixel & 0xff;
       }
     }
-
-    // char line[161];
-    // for (uint16_t i=0; i<120; i++) {
-    //   u16_frame_line_to_str(vospiBuf, 160, i, line, min, max);
-    //   Serial.println(line);
-    // }
-    // Serial.println("");
   }
 
   server.handleClient();
