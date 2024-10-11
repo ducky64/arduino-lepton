@@ -2,6 +2,10 @@
 #include "lepton.h"
 #include "lepton_util.h"
 
+// web server code based on (BSD)
+// https://github.com/arkhipenko/esp32-cam-mjpeg/blob/master/esp32_camera_mjpeg.ino
+// and RTOS multiclient version (BSD)
+// https://github.com/arkhipenko/esp32-cam-mjpeg-multiclient/blob/master/esp32_camera_mjpeg_multiclient.ino
 #include <WiFi.h>
 #include "WifiConfig.h"  // must define 'const char* ssid' and 'const char* password'
 #include <WebServer.h>
@@ -60,6 +64,39 @@ uint8_t bufferWriteIndex = 0;  // buffer being written to
 
 
 WebServer server(80);
+
+
+const char kMjpegHeader[] = "HTTP/1.1 200 OK\r\n" \
+                      "Access-Control-Allow-Origin: *\r\n" \
+                      "Content-Type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n";
+const char kMjpegBoundary[] = "\r\n--123456789000000000000987654321\r\n";  // arbitrarily-chosen delimiter
+const char kMjpegContentType[] = "Content-Type: image/jpeg\r\nContent-Length: ";  // written per frame
+const int kMjpegHeaderLen = strlen(kMjpegHeader);
+const int kMjpegBoundaryLen = strlen(kMjpegBoundary);
+const int kMjpegContentTypeLen = strlen(kMjpegContentType);
+
+void handle_mjpeg_stream(void)
+{
+  char buf[32];
+  int s;
+
+  WiFiClient client = server.client();
+
+  client.write(kMjpegHeader, kMjpegHeaderLen);
+  client.write(kMjpegBoundary, kMjpegBoundaryLen);
+
+  while (true)
+  {
+    if (!client.connected()) break;
+    cam.run();
+    s = cam.getSize();
+    client.write(kMjpegContentType, kMjpegContentTypeLen);
+    // sprintf( buf, "%d\r\n\r\n", s );  // TODO write length
+    client.write(buf, strlen(buf));
+    // client.write((char *)cam.getfb(), s);  // TODO write framebuffer
+    client.write(kMjpegBoundary, kMjpegBoundaryLen);
+  }
+}
 
 
 const char kJpgHeader[] = "HTTP/1.1 200 OK\r\n" \
@@ -143,7 +180,7 @@ void setup() {
   ESP_LOGI("main", "WiFi connected %s", WiFi.localIP().toString());
 
   ESP_LOGI("main", "Server started");
-  // server.on("/mjpeg/1", HTTP_GET, handle_jpg_stream);
+  server.on("/mjpeg", HTTP_GET, handle_mjpeg_stream);
   server.on("/jpg", HTTP_GET, handle_jpg);
   server.onNotFound(handleNotFound);
   server.begin();
