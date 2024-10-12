@@ -44,11 +44,17 @@ inline void U32ToBuffer(uint32_t data, uint8_t* bufferOut) {
 }
 
 
-FlirLepton::FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset) : 
-    wire_(&wire), spi_(&spi), csPin_(cs), resetPin_(reset) {
+FlirLepton::FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset, int pwrdn) : 
+    wire_(&wire), spi_(&spi), csPin_(cs), resetPin_(reset), pwrdnPin_(pwrdn) {
 };
 
 bool FlirLepton::begin() {
+    if (pwrdnPin_ != -1) {
+      digitalWrite(pwrdnPin_, HIGH);
+      pinMode(pwrdnPin_, OUTPUT);
+      digitalWrite(pwrdnPin_, HIGH);      
+    }
+
     digitalWrite(csPin_, HIGH);
     pinMode(csPin_, OUTPUT);
     digitalWrite(csPin_, HIGH);
@@ -148,6 +154,7 @@ bool FlirLepton::begin() {
   void FlirLepton::end() {
     pinMode(csPin_, INPUT);
     pinMode(resetPin_, INPUT);
+    pinMode(pwrdnPin_, INPUT);
   }
 
 

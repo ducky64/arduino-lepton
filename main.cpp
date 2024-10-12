@@ -59,7 +59,7 @@ const int kPinLepMiso = 4;
 SPIClass spi(HSPI);
 TwoWire i2c(0);
 
-FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
+FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst, kPinLepPwrdn);
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
@@ -208,9 +208,6 @@ void Task_Server(void *pvParameters) {
 
 
 void Task_Lepton(void *pvParameters) {
-  pinMode(kPinLepPwrdn, OUTPUT);
-  digitalWrite(kPinLepPwrdn, HIGH);
-
   ESP_LOGI("main", "Start init");
   pinMode(kPinLepVsync, INPUT);
   bool beginResult = lepton.begin();

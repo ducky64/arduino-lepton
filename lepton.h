@@ -37,12 +37,13 @@ public:
   };
 
   // Initializes this class without any hardware operations
-  FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset);
+  FlirLepton(TwoWire& wire, SPIClass& spi, int cs, int reset, int pwrdn = -1);
 
-  // Acquires hardware resources (setting pin direction) and performs initial power-on reset.
+  // Acquires hardware resources (setting pin direction) and performs initial power-on reset. PWRDN is asserted if not NC.
   // Wire and Spi should be init'd beforehand.
-  // PowerDown must be asserted externally (HIGH).
-  // Returns whether init was successful
+  // Returns whether init was successful.
+  // Must poll isReady() afterwards to check for camera ready.
+  // Can be called multiple times to initiate a reset.
   bool begin();
 
   // Releases hardware resources, including tri-stating GPIOs
@@ -94,7 +95,7 @@ protected:
   TwoWire* wire_;
   SPIClass* spi_;
   // SPISettings spiSettings_;  // TODO kDefaultSpiSettings seems to be unavailable until after construction so this can't be init'd
-  int csPin_, resetPin_;
+  int csPin_, resetPin_, pwrdnPin_;
 
   int resetMillis_;  // millis() at which the device exited reset
   bool i2cReady_ = false;  // if sufficient millis() has elapsed since reset for I2C to be up
