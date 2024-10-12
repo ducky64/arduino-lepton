@@ -265,7 +265,7 @@ void Task_Lepton(void *pvParameters) {
       }
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
     }
-    
+
     vTaskDelay(1);
   }
 }
@@ -291,7 +291,7 @@ void setup() {
   // bufferReadSemaphore = xSemaphoreCreateCountingStatic(kMaxSimultaneousReaders, 0, &bufferReadSemaphoreBuffer);
 
   // webserver is relatively low priority
-  xTaskCreatePinnedToCore(Task_Server, "Task_Server", 16384, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Server, "Task_Server", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
 }
 
