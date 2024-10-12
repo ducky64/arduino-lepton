@@ -64,7 +64,6 @@ uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
 std::atomic<uint8_t> bufferReaders{0};  // number of readers of the non-writing buffer, locks bufferWriteIndex if >0
-// const size_t kMaxSimultaneousReaders = 8;
 SemaphoreHandle_t bufferControlSemaphore = nullptr;  // mutex to control access to the write index / readers count
 StaticSemaphore_t bufferControlSemaphoreBuf;
 
@@ -109,6 +108,14 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* j
 
 WebServer server(80);
 
+const size_t kMaxStreamingClients = 4;
+uint8_t numStreamingClients = 0;  // synchronized with the streamingClients buffer
+WiFiClient streamingClients[kMaxStreamingClients];  // always continuous from zero when mutex is released
+
+SemaphoreHandle_t streamingClientsSemaphore = nullptr;  // mutex to control access to the streaming clients count / buffer
+StaticSemaphore_t streamingClientsSemaphoreBuf;
+
+
 const char kMjpegHeader[] = "HTTP/1.1 200 OK\r\n" \
                       "Access-Control-Allow-Origin: *\r\n" \
                       "Content-Type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n";
@@ -118,33 +125,89 @@ const int kMjpegHeaderLen = strlen(kMjpegHeader);
 const int kMjpegBoundaryLen = strlen(kMjpegBoundary);
 const int kMjpegContentTypeLen = strlen(kMjpegContentType);
 
-void handle_mjpeg_stream(void)
-{
-  char buf[32];
-  int s;
+void Task_MjpegStream(void *pvParameters) {
+  while (true) {
+    vTaskDelay(200);  // TODO replace with notifications
 
-  WiFiClient client = server.client();
+    while (xSemaphoreTake(streamingClientsSemaphore, portMAX_DELAY) != pdTRUE);
+    uint8_t currStreamingClients = numStreamingClients;
+    // TODO deallocate prior clients
+    assert(xSemaphoreGive(streamingClientsSemaphore) == pdTRUE);
 
-  client.write(kMjpegHeader, kMjpegHeaderLen);
-  client.write(kMjpegBoundary, kMjpegBoundaryLen);
-
-  while (true)
-  {
-    if (!client.connected()) {
-      break;
+    if (currStreamingClients <= 0) {
+      continue;
     }
-    // size_t jpegSize;
-    // if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) != JPEGE_SUCCESS) {
-    //   break;
-    // }
-    // client.write(kMjpegContentType, kMjpegContentTypeLen);
-    // sprintf(buf, "%d\r\n\r\n", jpegSize);
-    // client.write(buf, strlen(buf));
-    // client.write(jpegBuf, jpegSize);  // TODO write framebuffer
-    // client.write(kMjpegBoundary, kMjpegBoundaryLen);
 
-    // get next frame
-    // TODO IMPLEMENT ME
+    // encode frame
+    uint8_t jpegBuf[kJpegBufferSize];
+    size_t jpegSize;
+    while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
+    uint8_t bufferReadIndex = (bufferWriteIndex + 1) % 2;
+    bufferReaders++;
+    assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
+
+    int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+
+    bufferReaders--;
+
+    if (encodeStatus == JPEGE_SUCCESS) {
+      ESP_LOGI("main", "MJPEG stream %i B", jpegSize);
+      char buf[32];
+      sprintf(buf, "%d\r\n\r\n", jpegSize);
+      size_t bufLen = strlen(buf);
+
+      for (size_t i=0; i<currStreamingClients; i++) {
+        streamingClients[i].write(kMjpegContentType, kMjpegContentTypeLen);
+        streamingClients[i].write(buf, bufLen);
+        streamingClients[i].write(jpegBuf, jpegSize);
+        streamingClients[i].write(kMjpegBoundary, kMjpegBoundaryLen);
+      }
+    }
+  }
+}
+
+// Starts the MJPEG stream, including sending the current frame or a max-clients error
+void handle_mjpeg_stream(void) {
+  WiFiClient* client;
+  while (xSemaphoreTake(streamingClientsSemaphore, portMAX_DELAY) != pdTRUE);
+  if (numStreamingClients >= kMaxStreamingClients) {
+    client = nullptr;
+  } else {
+    streamingClients[numStreamingClients] = server.client();
+    client = &(streamingClients[numStreamingClients]);
+    numStreamingClients++;
+  }
+  assert(xSemaphoreGive(streamingClientsSemaphore) == pdTRUE);
+
+  if (client == nullptr) {
+    server.send(200, "text / plain", "Max streaming clients");
+    return;
+  }
+
+  client->write(kMjpegHeader, kMjpegHeaderLen);
+  client->write(kMjpegBoundary, kMjpegBoundaryLen);
+
+  // encode and send the first frame, if valid
+  uint8_t jpegBuf[kJpegBufferSize];
+  size_t jpegSize;
+
+  while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
+  uint8_t bufferReadIndex = (bufferWriteIndex + 1) % 2;
+  bufferReaders++;
+  assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
+
+  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+
+  bufferReaders--;
+
+  if (encodeStatus == JPEGE_SUCCESS) {
+    ESP_LOGI("main", "MJPEG started %i B", jpegSize);
+    char buf[32];
+    client->write(kMjpegContentType, kMjpegContentTypeLen);
+    sprintf(buf, "%d\r\n\r\n", jpegSize);
+    client->write(buf, strlen(buf));
+    client->write(jpegBuf, jpegSize);
+    client->write(kMjpegBoundary, kMjpegBoundaryLen);
   }
 }
 
@@ -200,6 +263,14 @@ void Task_Server(void *pvParameters) {
   server.begin();
   ESP_LOGI("main", "Server started");
 
+  while (true) {
+    server.handleClient();
+    vTaskDelay(1);
+  }
+}
+
+
+void Task_Stream(void *pvParameters) {
   while (true) {
     server.handleClient();
     vTaskDelay(1);
@@ -280,11 +351,13 @@ void setup() {
   // initialize shared data structures
   bufferControlSemaphore = xSemaphoreCreateMutexStatic(&bufferControlSemaphoreBuf);
   assert(bufferControlSemaphore != nullptr);
-  // bufferReadSemaphore = xSemaphoreCreateCountingStatic(kMaxSimultaneousReaders, 0, &bufferReadSemaphoreBuffer);
+  streamingClientsSemaphore = xSemaphoreCreateMutexStatic(&streamingClientsSemaphoreBuf);
+  assert(streamingClientsSemaphore != nullptr);
 
   // webserver is relatively low priority
-  xTaskCreatePinnedToCore(Task_Server, "Task_Server", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Server, "Task_Server", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
 }
 
 void loop() {
