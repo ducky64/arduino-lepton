@@ -308,6 +308,9 @@ void Task_Lepton(void *pvParameters) {
 
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
+  
+  // bool result = lepton.setAgc(FlirLepton::kAgcHeq);
+  // ESP_LOGI("main", "Lepton AGC mode << %i", result);
 
   while (true) {
     bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex]);
@@ -315,26 +318,20 @@ void Task_Lepton(void *pvParameters) {
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
+      size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
+
       uint16_t min, max;
-      u16_frame_min_max(vospiBuf[bufferWriteIndex], lepton.getFrameWidth(), lepton.getFrameHeight(), &min, &max);
+      u16_frame_min_max(vospiBuf[bufferWriteIndex], width, height, &min, &max);
       uint16_t range = max - min;
       if (range == 0) {  // avoid division by zero
         ESP_LOGW("main", "empty thermal image");
         range = 1;
       }
 
-      // really jank AGC
-      const size_t height = 120, width = 160;
+      // reformat to 8-bit
       for (uint16_t y=0; y<height; y++) {
         for (uint16_t x=0; x<width; x++) {
-          uint16_t pixel = ((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1];
-          
-          pixel = (uint32_t)(pixel - min) * 255 / range;
-          vospiBuf[bufferWriteIndex][y*width+x] = pixel;
-
-          // pixel = (uint32_t)(pixel - min) * 65535 / range;
-          // vospiBuf[bufferWriteIndex][2*(y*width+x)] = pixel >> 8;
-          // vospiBuf[bufferWriteIndex][2*(y*width+x) + 1] = pixel & 0xff;
+          vospiBuf[bufferWriteIndex][y*width+x] = vospiBuf[bufferWriteIndex][2*(y*width+x)];
         }
       }
 

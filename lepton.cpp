@@ -169,6 +169,38 @@ bool FlirLepton::begin() {
   }
 
 
+  bool FlirLepton::setAgc(Agc mode) {
+    uint8_t buffer[4];
+    
+    if (mode != kAgcNone) {  // enable AGC and set mode
+      if (mode >= kAgcEnd || mode < 0) {
+        LEP_LOGW("setAgc() invalid mode %i", mode);
+        return false;
+      }
+      U32ToBuffer(1, buffer);
+      Result result = commandSet(kAgc, 0x00 >> 2, 4, buffer);
+      if (result != kLepOk) {
+        LEP_LOGW("setAgc() enable command returned %i", result);
+        return false;
+      }
+      U32ToBuffer(mode, buffer);
+      result = commandSet(kAgc, 0x04 >> 2, 4, buffer);
+      if (result != kLepOk) {
+        LEP_LOGW("setAgc() mode command returned %i", result);
+        return false;
+      }
+    } else {  // disable AGC
+      U32ToBuffer(0, buffer);
+      Result result = commandSet(kAgc, 0x00 >> 2, 4, buffer);
+      if (result != kLepOk) {
+        LEP_LOGW("setAgc() enable command returned %i", result);
+        return false;
+      }
+    }
+    return true;
+  }
+
+
   FlirLepton::Result FlirLepton::commandGet(FlirLepton::ModuleId moduleId, uint8_t moduleCommandId, uint16_t len, uint8_t *dataOut, bool oemBit) {
     if (!writeReg16(kRegDataLen, len / 2)) {
       LEP_LOGE("commandGet(%i, %i) write data len failed", moduleId, moduleCommandId);

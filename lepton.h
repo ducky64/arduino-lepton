@@ -58,6 +58,14 @@ public:
   // Enable the VSYNC output on GPIO
   bool enableVsync();
 
+  enum Agc {
+    kAgcNone = -1,  // custom for this library, disables AGC
+    kAgcLinear = 0,  // histogram-based AGC
+    kAgcHeq,
+    kAgcEnd,
+  };
+  bool setAgc(Agc mode);
+
   /** SPI Operations
    * TODO: move into a separate class to allow more optimization
    */
@@ -123,6 +131,10 @@ protected:
 
   bool metadataRead_ = false;  // true when the above fields have been attempted to be read
 
+  // mode configuration
+  Agc agcMode_ = kAgcNone;
+
+  // video data configuration
   uint8_t bytesPerPixel_ = 2;
   uint8_t frameWidth_ = 160, frameHeight_ = 120;
 
