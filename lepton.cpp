@@ -56,7 +56,7 @@ bool FlirLepton::begin() {
     digitalWrite(resetPin_, LOW);  // assert RESET
     pinMode(resetPin_, OUTPUT);
     digitalWrite(resetPin_, LOW);  // assert RESET
-    delay(1);  // wait >5000 clk periods @ 25MHz MCLK, Lepton Eng Datasheet Figure 6
+    delayMicroseconds(5000/25);  // wait >5000 clk periods @ 25MHz MCLK, Lepton Eng Datasheet Figure 6
     digitalWrite(resetPin_, HIGH);
 
     resetMillis_ = millis();
@@ -65,7 +65,7 @@ bool FlirLepton::begin() {
   }
 
   bool FlirLepton::isReady() {
-    if (!i2cReady_ && millis() < resetMillis_ + 950) {  // minimum wait before accessing I2C, Lepton Software IDD
+    if (!i2cReady_ && millis() - resetMillis_ < 950) {  // minimum wait before accessing I2C, Lepton Software IDD
       return false;
     }
 
