@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include "WifiConfig.h"  // must define 'const char* ssid' and 'const char* password'
 #include <WebServer.h>
+#include <atomic>
 #include <JPEGENC.h>
 
 // Unused (so far) pinmaps from HDL
@@ -60,11 +61,17 @@ TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
-uint8_t bufferWriteIndex = 0;  // buffer being written to
+// controlled by the writing (sensor) task
+uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
+std::atomic<uint8_t> bufferReaders{0};  // number of readers of the non-writing buffer, locks bufferWriteIndex if >0
+// const size_t kMaxSimultaneousReaders = 8;
+SemaphoreHandle_t bufferControlSemaphore = nullptr;  // mutex to control access to the write index / readers count
+StaticSemaphore_t bufferControlSemaphoreBuf;
+
 
 
 JPEGENC jpgenc;
-uint8_t jpegBuf[16384];
+const size_t kJpegBufferSize = 8192;
 
 // converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
 int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
@@ -127,15 +134,15 @@ void handle_mjpeg_stream(void)
     if (!client.connected()) {
       break;
     }
-    size_t jpegSize;
-    if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) != JPEGE_SUCCESS) {
-      break;
-    }
-    client.write(kMjpegContentType, kMjpegContentTypeLen);
-    sprintf(buf, "%d\r\n\r\n", jpegSize);
-    client.write(buf, strlen(buf));
-    client.write(jpegBuf, jpegSize);  // TODO write framebuffer
-    client.write(kMjpegBoundary, kMjpegBoundaryLen);
+    // size_t jpegSize;
+    // if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) != JPEGE_SUCCESS) {
+    //   break;
+    // }
+    // client.write(kMjpegContentType, kMjpegContentTypeLen);
+    // sprintf(buf, "%d\r\n\r\n", jpegSize);
+    // client.write(buf, strlen(buf));
+    // client.write(jpegBuf, jpegSize);  // TODO write framebuffer
+    // client.write(kMjpegBoundary, kMjpegBoundaryLen);
 
     // get next frame
     // TODO IMPLEMENT ME
@@ -152,8 +159,19 @@ void handle_jpg(void) {
   WiFiClient client = server.client();
   if (!client.connected()) return;
 
+  uint8_t jpegBuf[kJpegBufferSize];
   size_t jpegSize;
-  if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) == JPEGE_SUCCESS) {
+
+  while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
+  uint8_t bufferReadIndex = (bufferWriteIndex + 1) % 2;
+  bufferReaders++;
+  assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
+
+  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+
+  bufferReaders--;
+
+  if (encodeStatus == JPEGE_SUCCESS) {
     ESP_LOGI("main", "JPG created %i B", jpegSize);
     client.write(kJpgHeader, kJpgHeaderLen);
     client.write(jpegBuf, jpegSize);
@@ -191,7 +209,6 @@ void Task_Server(void *pvParameters) {
 
 
 void Task_Lepton(void *pvParameters) {
-
   pinMode(kPinLepPwrdn, OUTPUT);
   digitalWrite(kPinLepPwrdn, HIGH);
 
@@ -201,7 +218,7 @@ void Task_Lepton(void *pvParameters) {
   ESP_LOGI("main", "Lepton init << %i", beginResult);
 
   while (!lepton.isReady()) {
-    delay(10);
+    vTaskDelay(1);
   }
 
   bool result = lepton.enableVsync();
@@ -227,25 +244,29 @@ void Task_Lepton(void *pvParameters) {
         range = 1;
       }
 
-      // flip active buffer
-      uint8_t lastBuf = bufferWriteIndex;
-      bufferWriteIndex = (bufferWriteIndex + 1) % 2;
-
       // really jank AGC
       const size_t height = 120, width = 160;
       for (uint16_t y=0; y<height; y++) {
         for (uint16_t x=0; x<width; x++) {
-          uint16_t pixel = ((uint16_t)vospiBuf[lastBuf][2*(y*width+x)] << 8) | vospiBuf[lastBuf][2*(y*width+x) + 1];
+          uint16_t pixel = ((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1];
           
           pixel = (uint32_t)(pixel - min) * 255 / range;
-          vospiBuf[lastBuf][y*width+x] = pixel;
+          vospiBuf[bufferWriteIndex][y*width+x] = pixel;
 
           // pixel = (uint32_t)(pixel - min) * 65535 / range;
-          // vospiBuf[lastBuf][2*(y*width+x)] = pixel >> 8;
-          // vospiBuf[lastBuf][2*(y*width+x) + 1] = pixel & 0xff;
+          // vospiBuf[bufferWriteIndex][2*(y*width+x)] = pixel >> 8;
+          // vospiBuf[bufferWriteIndex][2*(y*width+x) + 1] = pixel & 0xff;
         }
       }
+
+      while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
+      if (bufferReaders == 0) {
+        bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+      }
+      assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
     }
+    
+    vTaskDelay(1);
   }
 }
 
@@ -264,8 +285,13 @@ void setup() {
   spi.begin(kPinLepSck, kPinLepMiso, -1, -1);
   i2c.begin(kPinI2cSda, kPinI2cScl, 400000);
 
+  // initialize shared data structures
+  bufferControlSemaphore = xSemaphoreCreateMutexStatic(&bufferControlSemaphoreBuf);
+  assert(bufferControlSemaphore != nullptr);
+  // bufferReadSemaphore = xSemaphoreCreateCountingStatic(kMaxSimultaneousReaders, 0, &bufferReadSemaphoreBuffer);
+
   // webserver is relatively low priority
-  xTaskCreatePinnedToCore(Task_Server, "Task_Server", 4096, NULL, 16, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Server, "Task_Server", 16384, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
 }
 
