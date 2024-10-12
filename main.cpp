@@ -343,7 +343,9 @@ void Task_Lepton(void *pvParameters) {
       }
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
-      xTaskNotify(streamingTask, 0, eNoAction);
+      if (streamingTask != nullptr) {
+        xTaskNotify(streamingTask, 0, eNoAction);
+      }
     }
 
     vTaskDelay(1);
@@ -353,12 +355,10 @@ void Task_Lepton(void *pvParameters) {
 
 void setup() {
   Serial.begin(115200);
-  esp_log_level_set("*", ESP_LOG_INFO);
-  esp_log_level_set("lepton", ESP_LOG_DEBUG);
 
+  // wait for post-flash reset
   pinMode(kPinLedR, OUTPUT);
   digitalWrite(kPinLedR, LOW);
-
   delay(2000);
   digitalWrite(kPinLedR, HIGH);
 
