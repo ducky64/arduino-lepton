@@ -109,7 +109,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* j
 WebServer server(80);
 
 const size_t kMaxStreamingClients = 4;
-uint8_t numStreamingClients = 0;  // synchronized with the streamingClients buffer
+size_t numStreamingClients = 0;  // synchronized with the streamingClients buffer
 WiFiClient streamingClients[kMaxStreamingClients];  // always continuous from zero when mutex is released
 
 SemaphoreHandle_t streamingClientsSemaphore = nullptr;  // mutex to control access to the streaming clients count / buffer
@@ -125,16 +125,12 @@ const int kMjpegHeaderLen = strlen(kMjpegHeader);
 const int kMjpegBoundaryLen = strlen(kMjpegBoundary);
 const int kMjpegContentTypeLen = strlen(kMjpegContentType);
 
+// For each connected streaming client, send new frames as they become available
 void Task_MjpegStream(void *pvParameters) {
   while (true) {
     vTaskDelay(200);  // TODO replace with notifications
 
-    while (xSemaphoreTake(streamingClientsSemaphore, portMAX_DELAY) != pdTRUE);
-    uint8_t currStreamingClients = numStreamingClients;
-    // TODO deallocate prior clients
-    assert(xSemaphoreGive(streamingClientsSemaphore) == pdTRUE);
-
-    if (currStreamingClients <= 0) {
+    if (numStreamingClients <= 0) {  // quick test
       continue;
     }
 
@@ -149,6 +145,23 @@ void Task_MjpegStream(void *pvParameters) {
     int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
 
     bufferReaders--;
+
+    // deallocate disconnected clients
+    while (xSemaphoreTake(streamingClientsSemaphore, portMAX_DELAY) != pdTRUE);
+    size_t writeClientIndex = 0;
+    for (size_t readClientIndex=0; readClientIndex<numStreamingClients; readClientIndex++) {
+      // TODO faster to swap with last element
+      if (streamingClients[readClientIndex].connected()) {
+        if (readClientIndex != writeClientIndex) {
+          streamingClients[writeClientIndex] = streamingClients[readClientIndex];
+        }
+        writeClientIndex++;
+      } else {
+        ESP_LOGI("main", "MJPEG disconnected %i", readClientIndex);
+      }
+    }
+    uint8_t currStreamingClients = numStreamingClients = writeClientIndex;
+    assert(xSemaphoreGive(streamingClientsSemaphore) == pdTRUE);
 
     if (encodeStatus == JPEGE_SUCCESS) {
       ESP_LOGI("main", "MJPEG stream %i B", jpegSize);
@@ -169,13 +182,14 @@ void Task_MjpegStream(void *pvParameters) {
 // Starts the MJPEG stream, including sending the current frame or a max-clients error
 void handle_mjpeg_stream(void) {
   WiFiClient* client;
+  size_t thisStreamingClient;  // valid if client != nullptr
   while (xSemaphoreTake(streamingClientsSemaphore, portMAX_DELAY) != pdTRUE);
   if (numStreamingClients >= kMaxStreamingClients) {
     client = nullptr;
   } else {
     streamingClients[numStreamingClients] = server.client();
     client = &(streamingClients[numStreamingClients]);
-    numStreamingClients++;
+    thisStreamingClient = numStreamingClients++;
   }
   assert(xSemaphoreGive(streamingClientsSemaphore) == pdTRUE);
 
@@ -201,7 +215,7 @@ void handle_mjpeg_stream(void) {
   bufferReaders--;
 
   if (encodeStatus == JPEGE_SUCCESS) {
-    ESP_LOGI("main", "MJPEG started %i B", jpegSize);
+    ESP_LOGI("main", "MJPEG started %i %i B", thisStreamingClient, jpegSize);
     char buf[32];
     client->write(kMjpegContentType, kMjpegContentTypeLen);
     sprintf(buf, "%d\r\n\r\n", jpegSize);
