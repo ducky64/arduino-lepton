@@ -285,7 +285,6 @@ void loop() {
   }
 
   if (readResult) {
-    ESP_LOGI(".", ".");
     digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
     uint16_t min, max;
