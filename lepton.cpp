@@ -163,7 +163,7 @@ bool FlirLepton::begin() {
     U32ToBuffer(5, buffer);
     Result result = commandSet(kOem, 0x54 >> 2, 4, buffer, true);
     if (result != kLepOk) {
-      LEP_LOGW("enableVsync() command returned %i", result);
+      LEP_LOGE("enableVsync() command returned %i", result);
     }
     return result == kLepOk;
   }
@@ -174,26 +174,26 @@ bool FlirLepton::begin() {
     
     if (mode != kAgcNone) {  // enable AGC and set mode
       if (mode >= kAgcEnd || mode < 0) {
-        LEP_LOGW("setAgc() invalid mode %i", mode);
+        LEP_LOGE("setAgc() invalid mode %i", mode);
         return false;
       }
       U32ToBuffer(1, buffer);
       Result result = commandSet(kAgc, 0x00 >> 2, 4, buffer);
       if (result != kLepOk) {
-        LEP_LOGW("setAgc() enable command returned %i", result);
+        LEP_LOGE("setAgc() enable command returned %i", result);
         return false;
       }
       U32ToBuffer(mode, buffer);
       result = commandSet(kAgc, 0x04 >> 2, 4, buffer);
       if (result != kLepOk) {
-        LEP_LOGW("setAgc() mode command returned %i", result);
+        LEP_LOGW("setAgc() policy command returned %i", result);
         return false;
       }
     } else {  // disable AGC
       U32ToBuffer(0, buffer);
       Result result = commandSet(kAgc, 0x00 >> 2, 4, buffer);
       if (result != kLepOk) {
-        LEP_LOGW("setAgc() enable command returned %i", result);
+        LEP_LOGE("setAgc() enable command returned %i", result);
         return false;
       }
     }

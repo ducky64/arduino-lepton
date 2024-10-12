@@ -70,7 +70,7 @@ StaticSemaphore_t bufferControlSemaphoreBuf;
 
 
 JPEGENC jpgenc;
-const size_t kJpegBufferSize = 8192;
+const size_t kJpegBufferSize = 16384;
 
 // converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
 int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t ucPixelType, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
@@ -308,9 +308,11 @@ void Task_Lepton(void *pvParameters) {
 
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
-  
-  // bool result = lepton.setAgc(FlirLepton::kAgcHeq);
-  // ESP_LOGI("main", "Lepton AGC mode << %i", result);
+
+  result = lepton.setAgc(FlirLepton::kAgcHeq);
+  ESP_LOGI("main", "Lepton AGC mode << %i", result);
+
+  delay(185);  // resync after changing mode - required or no video data sent
 
   while (true) {
     bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex]);
@@ -331,7 +333,7 @@ void Task_Lepton(void *pvParameters) {
       // reformat to 8-bit
       for (uint16_t y=0; y<height; y++) {
         for (uint16_t x=0; x<width; x++) {
-          vospiBuf[bufferWriteIndex][y*width+x] = vospiBuf[bufferWriteIndex][2*(y*width+x)];
+          vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 2;
         }
       }
 
