@@ -277,11 +277,19 @@ bool FlirLepton::begin() {
     return true; 
   }
 
-  bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* readErrorOut) {
+  bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
     size_t requiredBuffer = videoPacketDataLen_ * packetsPerSegment_ * segmentsPerFrame_;
     if (bufferLen < requiredBuffer) {
       LEP_LOGE("readVoSpi insufficient buffer, got %i need %i", bufferLen, requiredBuffer);
       return false;
+    }
+
+    if (inResync_) {  // while in resync, CS should be held HIGH
+      if (millis() - resyncStartMillis_ >= kResyncMillis) {
+        inResync_ = false;
+      } else {
+        return false;
+      }
     }
 
     spi_->beginTransaction(kDefaultSpiSettings);
@@ -296,7 +304,7 @@ bool FlirLepton::begin() {
 
         uint8_t header[4];
         spi_->transfer(header, 4);
-        spi_->transfer(bufferPtr, 160);  // always read a whole packet
+        spi_->transfer(bufferPtr, videoPacketDataLen_);  // always read a whole packet
         uint16_t id = ((uint16_t)header[0] << 8) | header[1];
         uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
 
@@ -315,9 +323,8 @@ bool FlirLepton::begin() {
         if (packetNum != packet) {
           LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
-          if (readErrorOut != nullptr) {
-            *readErrorOut = true;
-          }
+          resyncStartMillis_ = millis();
+          inResync_ = true;
           break;
         }
         if (packetNum == 20) {
@@ -326,9 +333,8 @@ bool FlirLepton::begin() {
           } else if (ttt != segment) {
             LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
             invalidate = true;
-            if (readErrorOut != nullptr) {
-              *readErrorOut = true;
-            }
+            resyncStartMillis_ = millis();
+            inResync_ = true;
             break;
           }
         }

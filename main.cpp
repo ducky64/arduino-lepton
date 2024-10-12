@@ -69,7 +69,6 @@ SemaphoreHandle_t bufferControlSemaphore = nullptr;  // mutex to control access 
 StaticSemaphore_t bufferControlSemaphoreBuf;
 
 
-
 JPEGENC jpgenc;
 const size_t kJpegBufferSize = 8192;
 
@@ -225,13 +224,7 @@ void Task_Lepton(void *pvParameters) {
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
   while (true) {
-    bool readError = false;
-    bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &readError);
-
-    if (readError) {
-      ESP_LOGW("main", "Read error, re-sync");
-      delay(185);  // de-sync to re-sync
-    }
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex]);
 
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
