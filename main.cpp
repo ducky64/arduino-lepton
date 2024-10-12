@@ -60,6 +60,7 @@ SPIClass spi(HSPI);
 TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst, kPinLepPwrdn);
+uint8_t jpegencPixelType = JPEGE_PIXEL_GRAYSCALE;
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
@@ -72,7 +73,7 @@ JPEGENC jpgenc;
 const size_t kJpegBufferSize = 8192;
 
 // converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
-int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
+int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t ucPixelType, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
   JPEGENCODE enc;
   int rc;
 
@@ -83,8 +84,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* j
   }
 
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, JPEGE_PIXEL_GRAYSCALE, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
-    // jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_RGB565, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, ucPixelType, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "encodeBegin error %i", rc);
       return rc;
@@ -143,7 +143,8 @@ void Task_MjpegStream(void *pvParameters) {
     bufferReaders++;
     assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
-    int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+    int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
+        jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
 
     bufferReaders--;
 
@@ -211,7 +212,8 @@ void handle_mjpeg_stream(void) {
   bufferReaders++;
   assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
-  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
+      jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
 
   bufferReaders--;
 
@@ -244,7 +246,8 @@ void handle_jpg(void) {
   bufferReaders++;
   assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
-  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize);
+  int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
+      jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
 
   bufferReaders--;
 
@@ -313,7 +316,7 @@ void Task_Lepton(void *pvParameters) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
       uint16_t min, max;
-      u16_frame_min_max(vospiBuf[bufferWriteIndex], 160, 120, &min, &max);
+      u16_frame_min_max(vospiBuf[bufferWriteIndex], lepton.getFrameWidth(), lepton.getFrameHeight(), &min, &max);
       uint16_t range = max - min;
       if (range == 0) {  // avoid division by zero
         ESP_LOGW("main", "empty thermal image");

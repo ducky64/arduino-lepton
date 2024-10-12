@@ -67,6 +67,23 @@ public:
   // buffer may still be overwritten to even if no video data is present.
   bool readVoSpi(size_t bufferLen, uint8_t* buffer);
 
+  /** Metadata operations
+  */
+  // returns frame width in pixels
+  size_t getFrameWidth() {
+    return frameWidth_;
+  }
+
+  // returns frame width in pixels
+  size_t getFrameHeight() {
+    return frameHeight_;
+  }
+
+  // returns bytes per pixel, currently 2=16-bit grey mode, 3-RGB888 format
+  size_t getBytesPerPixel() {
+    return bytesPerPixel_;
+  }
+
 protected:
   /** I2C Operations 
    */
