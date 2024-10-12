@@ -60,9 +60,10 @@ public:
   /** SPI Operations
    * TODO: move into a separate class to allow more optimization
    */
-  // Reads VoSpi frame. Must be called regularly to maintain sync.
-  // Returns true if a frame was read (and stored in buffer), otherwise false (eg, discard frame read).
-  // buffer may still be (over)written to even if no video data is present.
+  // Reads a VoSpi frame. Must be called regularly to maintain sync.
+  // Blocks while a frame is being read out, returns quicker inbetween frames.
+  // Returns true if a frame was read (and stored in buffer), otherwise false (eg, discard packet read).
+  // buffer may still be overwritten to even if no video data is present.
   bool readVoSpi(size_t bufferLen, uint8_t* buffer);
 
 protected:
