@@ -206,6 +206,88 @@ void handleNotFound() {
 }
 
 
+void Task_Server(void *pvParameters) {
+  ESP_LOGI("main", "Start wifi");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(10);  // yield
+  }
+  ESP_LOGI("main", "WiFi connected %s", WiFi.localIP().toString());
+
+  server.on("/mjpeg", HTTP_GET, handle_mjpeg_stream);
+  server.on("/jpg", HTTP_GET, handle_jpg);
+  server.onNotFound(handleNotFound);
+  server.begin();
+  ESP_LOGI("main", "Server started");
+
+  while (true) {
+    server.handleClient();
+    vTaskDelay(1);
+  }
+}
+
+
+void Task_Lepton(void *pvParameters) {
+
+  pinMode(kPinLepPwrdn, OUTPUT);
+  digitalWrite(kPinLepPwrdn, HIGH);
+
+  ESP_LOGI("main", "Start init");
+  pinMode(kPinLepVsync, INPUT);
+  bool beginResult = lepton.begin();
+  ESP_LOGI("main", "Lepton init << %i", beginResult);
+
+  while (!lepton.isReady()) {
+    delay(10);
+  }
+
+  bool result = lepton.enableVsync();
+  ESP_LOGI("main", "Lepton Vsync << %i", result);
+
+  while (true) {
+    bool readError = false;
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &readError);
+
+    if (readError) {
+      ESP_LOGW("main", "Read error, re-sync");
+      delay(185);  // de-sync to re-sync
+    }
+
+    if (readResult) {
+      digitalWrite(kPinLedR, !digitalRead(kPinLedR));
+
+      uint16_t min, max;
+      u16_frame_min_max(vospiBuf[bufferWriteIndex], 160, 120, &min, &max);
+      uint16_t range = max - min;
+      if (range == 0) {  // avoid division by zero
+        ESP_LOGW("main", "empty thermal image");
+        range = 1;
+      }
+
+      // flip active buffer
+      uint8_t lastBuf = bufferWriteIndex;
+      bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+
+      // really jank AGC
+      const size_t height = 120, width = 160;
+      for (uint16_t y=0; y<height; y++) {
+        for (uint16_t x=0; x<width; x++) {
+          uint16_t pixel = ((uint16_t)vospiBuf[lastBuf][2*(y*width+x)] << 8) | vospiBuf[lastBuf][2*(y*width+x) + 1];
+          
+          pixel = (uint32_t)(pixel - min) * 255 / range;
+          vospiBuf[lastBuf][y*width+x] = pixel;
+
+          // pixel = (uint32_t)(pixel - min) * 65535 / range;
+          // vospiBuf[lastBuf][2*(y*width+x)] = pixel >> 8;
+          // vospiBuf[lastBuf][2*(y*width+x) + 1] = pixel & 0xff;
+        }
+      }
+    }
+  }
+}
+
+
 void setup() {
   Serial.begin(115200);
   esp_log_level_set("*", ESP_LOG_INFO);
@@ -220,100 +302,11 @@ void setup() {
   spi.begin(kPinLepSck, kPinLepMiso, -1, -1);
   i2c.begin(kPinI2cSda, kPinI2cScl, 400000);
 
-  pinMode(kPinLepPwrdn, OUTPUT);
-  digitalWrite(kPinLepPwrdn, HIGH);
-
-  ESP_LOGI("main", "Start init");
-  pinMode(kPinLepVsync, INPUT);
-  bool beginResult = lepton.begin();
-  ESP_LOGI("main", "Lepton init << %i", beginResult);
-
-  ESP_LOGI("main", "Start wifi");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-
-  ESP_LOGI("main", "Wait for all ready");
-  while (WiFi.status() != WL_CONNECTED);
-  ESP_LOGI("main", "WiFi connected %s", WiFi.localIP().toString());
-
-  while (!lepton.isReady()) {
-    delay(100);
-  }
-
-  ESP_LOGI("main", "Server started");
-  server.on("/mjpeg", HTTP_GET, handle_mjpeg_stream);
-  server.on("/jpg", HTTP_GET, handle_jpg);
-  server.onNotFound(handleNotFound);
-  server.begin();
-
-  bool result = lepton.enableVsync();
-  ESP_LOGI("main", "Lepton Vsync << %i", result);
-
-  digitalWrite(kPinLedR, LOW);
-  ESP_LOGI("main", "Setup complete");
-
-  // while (digitalRead(kPinLepVsync) == LOW);
-
-  // lepton.end();
-  // spi.end();
-  // i2c.end();
-  // digitalWrite(kPinLepPwrdn, LOW);
-  // ESP_LOGI("main", "Lepton powerdown");
+  // webserver is relatively low priority
+  xTaskCreatePinnedToCore(Task_Server, "Task_Server", 4096, NULL, 16, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
 }
 
 void loop() {
-  bool readError = false;
-  bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &readError);
-
-  if (readError) {
-    // const int kIncr = 16;
-    // for (int i=0; i<20; i++) {
-    //   if (i == 10) {
-    //     ESP_LOGI("main", "");
-    //   }
-    //   ESP_LOGI("main", "  %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
-    //       vospiBuf[i*kIncr+0], vospiBuf[i*kIncr+1], vospiBuf[i*kIncr+2], vospiBuf[i*kIncr+3],
-    //       vospiBuf[i*kIncr+4], vospiBuf[i*kIncr+5], vospiBuf[i*kIncr+6], vospiBuf[i*kIncr+7],
-    //       vospiBuf[i*kIncr+8], vospiBuf[i*kIncr+9], vospiBuf[i*kIncr+10], vospiBuf[i*kIncr+11],
-    //       vospiBuf[i*kIncr+12], vospiBuf[i*kIncr+13], vospiBuf[i*kIncr+14], vospiBuf[i*kIncr+15]);
-    // }
-
-    ESP_LOGW("main", "Read error, re-establishing sync");
-    delay(185);  // establish sync
-    // while (digitalRead(kPinLepVsync) == LOW);
-  }
-
-  if (readResult) {
-    digitalWrite(kPinLedR, !digitalRead(kPinLedR));
-
-    uint16_t min, max;
-    u16_frame_min_max(vospiBuf[bufferWriteIndex], 160, 120, &min, &max);
-    uint16_t range = max - min;
-    if (range == 0) {  // avoid division by zero
-      ESP_LOGW("main", "empty thermal image");
-      range = 1;
-    }
-
-    // flip active buffer
-    uint8_t lastBuf = bufferWriteIndex;
-    bufferWriteIndex = (bufferWriteIndex + 1) % 2;
-
-    // really jank AGC
-    const size_t height = 120, width = 160;
-    for (uint16_t y=0; y<height; y++) {
-      for (uint16_t x=0; x<width; x++) {
-        uint16_t pixel = ((uint16_t)vospiBuf[lastBuf][2*(y*width+x)] << 8) | vospiBuf[lastBuf][2*(y*width+x) + 1];
-        
-        pixel = (uint32_t)(pixel - min) * 255 / range;
-        vospiBuf[lastBuf][y*width+x] = pixel;
-
-        // pixel = (uint32_t)(pixel - min) * 65535 / range;
-        // vospiBuf[lastBuf][2*(y*width+x)] = pixel >> 8;
-        // vospiBuf[lastBuf][2*(y*width+x) + 1] = pixel & 0xff;
-      }
-    }
-  }
-
-  server.handleClient();
+  vTaskDelay(1000);
 }
