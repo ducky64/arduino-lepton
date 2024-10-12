@@ -262,6 +262,8 @@ void Task_Lepton(void *pvParameters) {
       while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
       if (bufferReaders == 0) {
         bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+      } else {
+        ESP_LOGW("main", "skipped frame");
       }
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
     }
