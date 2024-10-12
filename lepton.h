@@ -105,6 +105,7 @@ protected:
   bool metadataRead_ = false;  // true when the above fields have been attempted to be read
 
   uint8_t bytesPerPixel_ = 2;
+  uint8_t frameWidth_ = 160, frameHeight_ = 120;
   size_t videoPacketDataLen_ = 160;  // bytes, 160 in Raw14 mode (default), 240 in RGB888 mode
   size_t packetsPerSegment_ = 60;  // Lepton 3.5, telemetry disabled
   size_t segmentsPerFrame_ = 4;

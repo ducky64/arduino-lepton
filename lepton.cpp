@@ -294,7 +294,7 @@ bool FlirLepton::begin() {
     for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
       bool discardSegment = false;
       for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-        delayMicroseconds(10);  // this is the magic
+        delayMicroseconds(8);  // this is the magic
 
         uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
 
@@ -319,7 +319,6 @@ bool FlirLepton::begin() {
         uint8_t ttt = (id >> 12) & 0x7;
 
         if (packetNum != packet) {
-          // desync can happen, the print affects timing and is off by default
           LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
           invalidate = true;
           if (readErrorOut != nullptr) {

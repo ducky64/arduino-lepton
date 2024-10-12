@@ -62,8 +62,45 @@ FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 uint8_t bufferWriteIndex = 0;  // buffer being written to
 
+uint8_t jpegBuf[16384];
+JPEGENC jpgenc;
 
 WebServer server(80);
+
+
+// converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
+int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
+  JPEGENCODE enc;
+  int rc;
+
+  rc = jpgenc.open(jpegBuf, jpegBufLen);
+  if (rc != JPEGE_SUCCESS) {
+    ESP_LOGE("jpg", "Open error %i", rc);
+    return rc;
+  }
+
+  if (rc == JPEGE_SUCCESS) {
+    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, JPEGE_PIXEL_GRAYSCALE, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    // jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_RGB565, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    if (rc != JPEGE_SUCCESS) {
+      ESP_LOGE("jpg", "encodeBegin error %i", rc);
+      return rc;
+    }
+  }
+  
+  if (rc == JPEGE_SUCCESS) {
+    rc = jpgenc.addFrame(&enc, frame, frameWidth);
+    if (rc != JPEGE_SUCCESS) {
+      ESP_LOGE("jpg", "addFrame error %i", rc);
+      return rc;
+    }
+  }
+  
+  if (rc == JPEGE_SUCCESS) {
+    *jpegLenOut = jpgenc.close();
+  }
+  return rc;
+}
 
 
 const char kMjpegHeader[] = "HTTP/1.1 200 OK\r\n" \
@@ -87,14 +124,59 @@ void handle_mjpeg_stream(void)
 
   while (true)
   {
-    if (!client.connected()) break;
-    cam.run();
-    s = cam.getSize();
+    if (!client.connected()) {
+      break;
+    }
+    size_t jpegSize;
+    if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) != JPEGE_SUCCESS) {
+      break;
+    }
     client.write(kMjpegContentType, kMjpegContentTypeLen);
-    // sprintf( buf, "%d\r\n\r\n", s );  // TODO write length
+    sprintf(buf, "%d\r\n\r\n", jpegSize);
     client.write(buf, strlen(buf));
-    // client.write((char *)cam.getfb(), s);  // TODO write framebuffer
+    client.write(jpegBuf, jpegSize);  // TODO write framebuffer
     client.write(kMjpegBoundary, kMjpegBoundaryLen);
+
+    // get next frame
+    // TODO Deuplicate
+    bool readResult = false;
+    while (!readResult) {
+  bool readError = false;
+  readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &readError);
+
+  if (readError) {
+    ESP_LOGW("main", "Read error, re-establishing sync");
+    delay(185);  // establish sync
+  }
+    }
+
+  if (readResult) {
+    digitalWrite(kPinLedR, !digitalRead(kPinLedR));
+
+    uint16_t min, max;
+    u16_frame_min_max(vospiBuf[bufferWriteIndex], 160, 120, &min, &max);
+    uint16_t range = max - min;
+    if (range == 0) {  // avoid division by zero
+      ESP_LOGW("main", "empty thermal image");
+      range = 1;
+    }
+
+    // flip active buffer
+    uint8_t lastBuf = bufferWriteIndex;
+    bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+
+    // really jank AGC
+    const size_t height = 120, width = 160;
+    for (uint16_t y=0; y<height; y++) {
+      for (uint16_t x=0; x<width; x++) {
+        uint16_t pixel = ((uint16_t)vospiBuf[lastBuf][2*(y*width+x)] << 8) | vospiBuf[lastBuf][2*(y*width+x) + 1];
+        
+        pixel = (uint32_t)(pixel - min) * 255 / range;
+        vospiBuf[lastBuf][y*width+x] = pixel;
+      }
+    }
+  }
+
   }
 }
 
@@ -102,41 +184,17 @@ void handle_mjpeg_stream(void)
 const char kJpgHeader[] = "HTTP/1.1 200 OK\r\n" \
                           "Content-disposition: inline; filename=capture.jpg\r\n" \
                           "Content-type: image/jpeg\r\n\r\n";
-const int kJpgHeaderLen= strlen(kJpgHeader);
-uint8_t jpegBuf[32768];
-JPEGENC jpgenc;
+const int kJpgHeaderLen = strlen(kJpgHeader);
 
 void handle_jpg(void) {
   WiFiClient client = server.client();
   if (!client.connected()) return;
 
-  JPEGENCODE enc;
-  int rc;
-  rc = jpgenc.open(jpegBuf, sizeof(jpegBuf));
-  if (rc != JPEGE_SUCCESS) {
-    ESP_LOGE("jpg", "Open error %i", rc);
-  }
-
-  if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_GRAYSCALE, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
-    // jpgenc.encodeBegin(&enc, 160, 120, JPEGE_PIXEL_RGB565, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
-    if (rc != JPEGE_SUCCESS) {
-      ESP_LOGE("jpg", "encodeBegin error %i", rc);
-    }
-  }
-  
-  if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.addFrame(&enc, vospiBuf[(bufferWriteIndex+1) % 2], 160);
-    if (rc != JPEGE_SUCCESS) {
-      ESP_LOGE("jpg", "addFrame error %i", rc);
-    }
-  }
-  
-  if (rc == JPEGE_SUCCESS) {
-    size_t encodedLen = jpgenc.close();
-    ESP_LOGI("main", "JPG created %i B", encodedLen);
+  size_t jpegSize;
+  if (encodeJpeg(vospiBuf[(bufferWriteIndex+1) % 2], 160, 120, jpegBuf, sizeof(jpegBuf), &jpegSize) == JPEGE_SUCCESS) {
+    ESP_LOGI("main", "JPG created %i B", jpegSize);
     client.write(kJpgHeader, kJpgHeaderLen);
-    client.write(jpegBuf, encodedLen);
+    client.write(jpegBuf, jpegSize);
   } else {
     server.send(200, "text / plain", "Error");
   }
@@ -179,15 +237,15 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED);
   ESP_LOGI("main", "WiFi connected %s", WiFi.localIP().toString());
 
+  while (!lepton.isReady()) {
+    delay(100);
+  }
+
   ESP_LOGI("main", "Server started");
   server.on("/mjpeg", HTTP_GET, handle_mjpeg_stream);
   server.on("/jpg", HTTP_GET, handle_jpg);
   server.onNotFound(handleNotFound);
   server.begin();
-
-  while (!lepton.isReady()) {
-    delay(10);
-  }
 
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
@@ -227,6 +285,7 @@ void loop() {
   }
 
   if (readResult) {
+    ESP_LOGI(".", ".");
     digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
     uint16_t min, max;
