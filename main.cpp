@@ -112,6 +112,7 @@ const size_t kMaxStreamingClients = 4;
 size_t numStreamingClients = 0;  // synchronized with the streamingClients buffer
 WiFiClient streamingClients[kMaxStreamingClients];  // always continuous from zero when mutex is released
 
+TaskHandle_t streamingTask = nullptr;
 SemaphoreHandle_t streamingClientsSemaphore = nullptr;  // mutex to control access to the streaming clients count / buffer
 StaticSemaphore_t streamingClientsSemaphoreBuf;
 
@@ -128,7 +129,7 @@ const int kMjpegContentTypeLen = strlen(kMjpegContentType);
 // For each connected streaming client, send new frames as they become available
 void Task_MjpegStream(void *pvParameters) {
   while (true) {
-    vTaskDelay(200);  // TODO replace with notifications
+    while (xTaskNotifyWait(0, 0, nullptr, portMAX_DELAY) == pdFALSE);
 
     if (numStreamingClients <= 0) {  // quick test
       continue;
@@ -341,6 +342,8 @@ void Task_Lepton(void *pvParameters) {
         ESP_LOGW("main", "skipped frame");
       }
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
+
+      xTaskNotify(streamingTask, 0, eNoAction);
     }
 
     vTaskDelay(1);
@@ -370,7 +373,7 @@ void setup() {
 
   // webserver is relatively low priority
   xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
-  xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", kJpegBufferSize + 4096, NULL, 1, &streamingTask, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_Server, "Task_Server", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
 }
 
