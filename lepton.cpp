@@ -199,6 +199,7 @@ bool FlirLepton::setVideoMode(VideoMode mode) {
     }      
   }
 
+  resyncRequested_ = true;
   videoMode_ = mode;
   return true;
 }
@@ -237,6 +238,7 @@ bool FlirLepton::setVideoFormat(VideoFormat format, PColorLut lut) {
     return false;
   }
 
+  resyncRequested_ = true;
   return true;
 }
 
@@ -363,6 +365,12 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWritte
     return false;
   }
 
+  if (resyncRequested_) {
+    resyncStartMillis_ = millis();
+    inResync_ = true;
+    resyncRequested_ = false;
+  }
+
   if (inResync_) {  // while in resync, CS should be held HIGH
     if (millis() - resyncStartMillis_ >= kResyncMillis) {
       inResync_ = false;
@@ -380,7 +388,6 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWritte
   for (uint8_t segment=1; segment <= segmentsPerFrame_ && !invalidate; segment++) {
     bool discardSegment = false;
     for (size_t packet=0; packet < packetsPerSegment_ && !invalidate; packet++) {
-
       uint8_t *bufferPtr = buffer + ((segment - 1) * videoPacketDataLen_ * packetsPerSegment_) + (packet * videoPacketDataLen_);
 
       uint8_t header[4];
@@ -392,11 +399,10 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWritte
         spi_->transfer(dummyBuf, videoPacketDataLen_);  // send the clocks, ignore the data, don't overwrite the buffer
         if (packet == 0 && segment == 1) {  // if no frame in progress, return
           invalidate = true;
-          break;
         } else {  // otherwise just ignore it - may show up in the middle of a transmission
           packet--;
-          continue;
         }
+        continue;
       } else {
         spi_->transfer(bufferPtr, videoPacketDataLen_);  // read into the buffer
         if (bufferWrittenOut != nullptr) {
@@ -410,8 +416,7 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWritte
       if (packetNum != packet) {
         LEP_LOGW("unexpected packet num %i (seg %i), expected %i", packetNum, segment, packet);
         invalidate = true;
-        resyncStartMillis_ = millis();
-        inResync_ = true;
+        resyncRequested_ = true;
         break;
       }
       if (packetNum == 20) {
@@ -420,8 +425,7 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWritte
         } else if (ttt != segment) {
           LEP_LOGW("unexpected ttt %i, expected %i", ttt, segment);
           invalidate = true;
-          resyncStartMillis_ = millis();
-          inResync_ = true;
+          resyncRequested_ = true;
           break;
         }
       }

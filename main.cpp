@@ -273,7 +273,7 @@ void Task_Server(void *pvParameters) {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(10);  // yield
+    vTaskDelay(1);
   }
   ESP_LOGI("main", "WiFi connected %s", WiFi.localIP().toString());
 
@@ -283,14 +283,6 @@ void Task_Server(void *pvParameters) {
   server.begin();
   ESP_LOGI("main", "Server started");
 
-  while (true) {
-    server.handleClient();
-    vTaskDelay(1);
-  }
-}
-
-
-void Task_Stream(void *pvParameters) {
   while (true) {
     server.handleClient();
     vTaskDelay(1);
@@ -311,6 +303,7 @@ void Task_Lepton(void *pvParameters) {
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
+  // optionally comment this and/or the next block out to not use AGC or colorization
   result = lepton.setVideoMode(FlirLepton::kAgcHeq);
   ESP_LOGI("main", "Lepton VideoMode << %i", result);
 
@@ -318,8 +311,6 @@ void Task_Lepton(void *pvParameters) {
   ESP_LOGI("main", "Lepton VideoFormat << %i", result);
   jpegencPixelType = JPEGE_PIXEL_RGB888;
   jpegencPixelBytes = 3;
-
-  delay(185);  // resync after changing mode - required or no video data sent
 
   bool bufferFlipRequested = false;  // allow queueing a buffer flip until data is overwritten
   while (true) {
@@ -333,13 +324,15 @@ void Task_Lepton(void *pvParameters) {
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
-      // reformat to 8-bit
-      // size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
-      // for (uint16_t y=0; y<height; y++) {
-      //   for (uint16_t x=0; x<width; x++) {
-      //     vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
-      //   }
-      // }
+      // reformat to 8-bit in greyscale mode
+      if (jpegencPixelBytes == 1) {
+        size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
+        for (uint16_t y=0; y<height; y++) {
+          for (uint16_t x=0; x<width; x++) {
+            vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
+          }
+        }
+      }
 
       bufferFlipRequested = true;
     }
@@ -385,7 +378,7 @@ void setup() {
   streamingClientsSemaphore = xSemaphoreCreateMutexStatic(&streamingClientsSemaphoreBuf);
   assert(streamingClientsSemaphore != nullptr);
 
-  // webserver is relatively low priority
+  // Lepton interface is timing-sensitive and needs to be high priority
   xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 16, NULL, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", 4096, NULL, 1, &streamingTask, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(Task_Server, "Task_Server", 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);

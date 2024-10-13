@@ -161,6 +161,7 @@ protected:
   size_t packetsPerSegment_ = 60;  // Lepton 3.5, telemetry disabled
   size_t segmentsPerFrame_ = 4;
 
+  bool resyncRequested_ = false;
   int resyncStartMillis_ = 0;  // millis() at which resync ends
   bool inResync_ = false;
 
