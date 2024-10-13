@@ -202,7 +202,7 @@ bool FlirLepton::setVideoMode(VideoMode mode) {
   return true;
 }
 
-bool FlirLepton::setVideoFormat(VideoFormat format) {
+bool FlirLepton::setVideoFormat(VideoFormat format, PColorLut lut) {
   if (format == kRgb888 && videoMode_ != kAgcLinear && videoMode_ != kAgcHeq) {
     LEP_LOGE("setVideoFormat() must setVideoMode() to an AGC mode");
     return false;
@@ -214,6 +214,15 @@ bool FlirLepton::setVideoFormat(VideoFormat format) {
   if (result != kLepOk) {
     LEP_LOGE("setVideoFormat() VID video output command returned %i", result);
     return false;
+  }
+
+  if (format == kRgb888) {
+    U32ToBuffer(lut, buffer);
+    Result result = commandSet(kVid, 0x04 >> 2, 4, buffer);
+    if (result != kLepOk) {
+      LEP_LOGE("setVideoFormat() VID PColor LUT command returned %i", result);
+      return false;
+    }
   }
 
   if (format == kRgb888) {

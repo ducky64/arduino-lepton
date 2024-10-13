@@ -71,7 +71,7 @@ StaticSemaphore_t bufferControlSemaphoreBuf;
 
 
 JPEGENC jpgenc;
-const size_t kJpegBufferSize = 49152;
+const size_t kJpegBufferSize = 32768;
 
 // converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
 int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t ucPixelType, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {

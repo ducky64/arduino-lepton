@@ -71,8 +71,19 @@ public:
     kGrey14,
     kRgb888
   };
-  // Sets the video format
-  bool setVideoFormat(VideoFormat format);
+  enum PColorLut {
+    kLutWheel6 = 0,
+    kLutFusion,
+    kLutRainbow,
+    kLutGlobow,
+    kLutSephia,
+    kLutColor,
+    kLutIceFire,
+    kLutRain,
+    kLutUser,
+  };
+  // Sets the video format, with an optional colorization LUT (ignored for non-RGB cases)
+  bool setVideoFormat(VideoFormat format, PColorLut lut = kLutFusion);
 
   /** SPI Operations
    * TODO: move into a separate class to allow more optimization
