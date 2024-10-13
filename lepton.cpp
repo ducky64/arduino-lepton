@@ -198,13 +198,34 @@ bool FlirLepton::setVideoMode(VideoMode mode) {
     }      
   }
 
+  videoMode_ = mode;
   return true;
 }
 
 bool FlirLepton::setVideoFormat(VideoFormat format) {
+  if (format == kRgb888 && videoMode_ != kAgcLinear && videoMode_ != kAgcHeq) {
+    LEP_LOGE("setVideoFormat() must setVideoMode() to an AGC mode");
+    return false;
+  }
+
   uint8_t buffer[4];
-  Result result;
-  
+  U32ToBuffer((format == kGrey14) ? 7 : 3, buffer);
+  Result result = commandSet(kVid, 0x30 >> 2, 4, buffer);
+  if (result != kLepOk) {
+    LEP_LOGE("setVideoFormat() VID video output command returned %i", result);
+    return false;
+  }
+
+  if (format == kRgb888) {
+    bytesPerPixel_ = 3;
+    videoPacketDataLen_ = 240;
+  } else if (format == kGrey14) {
+    bytesPerPixel_ = 2;
+    videoPacketDataLen_ = 160;
+  } else {
+    LEP_LOGE("setVideoFormat() unknown format %i, object may be in inconsistent state", format);
+    return false;
+  }
 
   return true;
 }

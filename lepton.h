@@ -70,7 +70,7 @@ public:
   enum VideoFormat {
     kGrey14,
     kRgb888
-  }
+  };
   // Sets the video format
   bool setVideoFormat(VideoFormat format);
 
@@ -138,6 +138,9 @@ protected:
   uint8_t flirSoftwareVersion_[8];
 
   bool metadataRead_ = false;  // true when the above fields have been attempted to be read
+
+  // mode configuration
+  VideoMode videoMode_ = kTLinear;  // default for Lepton 3.5, TODO for non-radiometric devices
 
   // video data configuration
   uint8_t bytesPerPixel_ = 2;

@@ -61,6 +61,7 @@ TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst, kPinLepPwrdn);
 uint8_t jpegencPixelType = JPEGE_PIXEL_GRAYSCALE;
+uint8_t jpegencPixelBytes = 1;
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
@@ -70,7 +71,7 @@ StaticSemaphore_t bufferControlSemaphoreBuf;
 
 
 JPEGENC jpgenc;
-const size_t kJpegBufferSize = 16384;
+const size_t kJpegBufferSize = 49152;
 
 // converts frame into a jpeg, stored in jpegBuf, writing the output length to jpegLenOut
 int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t ucPixelType, uint8_t* jpegBuf, size_t jpegBufLen, size_t* jpegLenOut) {
@@ -84,7 +85,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t uc
   }
 
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, ucPixelType, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
+    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, ucPixelType, JPEGE_SUBSAMPLE_444, JPEGE_Q_HIGH);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "encodeBegin error %i", rc);
       return rc;
@@ -92,7 +93,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t uc
   }
   
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.addFrame(&enc, frame, frameWidth);
+    rc = jpgenc.addFrame(&enc, frame, frameWidth * jpegencPixelBytes);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "addFrame error %i", rc);
       return rc;
@@ -116,6 +117,8 @@ TaskHandle_t streamingTask = nullptr;
 SemaphoreHandle_t streamingClientsSemaphore = nullptr;  // mutex to control access to the streaming clients count / buffer
 StaticSemaphore_t streamingClientsSemaphoreBuf;
 
+uint8_t streamingJpegBuffer[kJpegBufferSize];
+uint8_t webserverJpegBuffer[kJpegBufferSize];
 
 const char kMjpegHeader[] = "HTTP/1.1 200 OK\r\n" \
                       "Access-Control-Allow-Origin: *\r\n" \
@@ -136,7 +139,6 @@ void Task_MjpegStream(void *pvParameters) {
     }
 
     // encode frame
-    uint8_t jpegBuf[kJpegBufferSize];
     size_t jpegSize;
     while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
     uint8_t bufferReadIndex = (bufferWriteIndex + 1) % 2;
@@ -144,7 +146,7 @@ void Task_MjpegStream(void *pvParameters) {
     assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
     int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
-        jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
+        jpegencPixelType, streamingJpegBuffer, sizeof(streamingJpegBuffer), &jpegSize);
 
     bufferReaders--;
 
@@ -174,7 +176,7 @@ void Task_MjpegStream(void *pvParameters) {
       for (size_t i=0; i<currStreamingClients; i++) {
         streamingClients[i].write(kMjpegContentType, kMjpegContentTypeLen);
         streamingClients[i].write(buf, bufLen);
-        streamingClients[i].write(jpegBuf, jpegSize);
+        streamingClients[i].write(streamingJpegBuffer, jpegSize);
         streamingClients[i].write(kMjpegBoundary, kMjpegBoundaryLen);
       }
     }
@@ -204,7 +206,6 @@ void handle_mjpeg_stream(void) {
   client->write(kMjpegBoundary, kMjpegBoundaryLen);
 
   // encode and send the first frame, if valid
-  uint8_t jpegBuf[kJpegBufferSize];
   size_t jpegSize;
 
   while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
@@ -213,7 +214,7 @@ void handle_mjpeg_stream(void) {
   assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
   int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
-      jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
+      jpegencPixelType, webserverJpegBuffer, sizeof(webserverJpegBuffer), &jpegSize);
 
   bufferReaders--;
 
@@ -223,7 +224,7 @@ void handle_mjpeg_stream(void) {
     client->write(kMjpegContentType, kMjpegContentTypeLen);
     sprintf(buf, "%d\r\n\r\n", jpegSize);
     client->write(buf, strlen(buf));
-    client->write(jpegBuf, jpegSize);
+    client->write(webserverJpegBuffer, jpegSize);
     client->write(kMjpegBoundary, kMjpegBoundaryLen);
   }
 }
@@ -238,7 +239,6 @@ void handle_jpg(void) {
   WiFiClient client = server.client();
   if (!client.connected()) return;
 
-  uint8_t jpegBuf[kJpegBufferSize];
   size_t jpegSize;
 
   while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
@@ -247,14 +247,14 @@ void handle_jpg(void) {
   assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
   int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
-      jpegencPixelType, jpegBuf, sizeof(jpegBuf), &jpegSize);
+      jpegencPixelType, webserverJpegBuffer, sizeof(webserverJpegBuffer), &jpegSize);
 
   bufferReaders--;
 
   if (encodeStatus == JPEGE_SUCCESS) {
     ESP_LOGI("main", "JPG created %i B", jpegSize);
     client.write(kJpgHeader, kJpgHeaderLen);
-    client.write(jpegBuf, jpegSize);
+    client.write(webserverJpegBuffer, jpegSize);
   } else {
     server.send(200, "text / plain", "Error");
   }
@@ -312,6 +312,11 @@ void Task_Lepton(void *pvParameters) {
   result = lepton.setVideoMode(FlirLepton::kAgcHeq);
   ESP_LOGI("main", "Lepton VideoMode << %i", result);
 
+  result = lepton.setVideoFormat(FlirLepton::kRgb888);
+  ESP_LOGI("main", "Lepton VideoFormat << %i", result);
+  jpegencPixelType = JPEGE_PIXEL_RGB888;
+  jpegencPixelBytes = 3;
+
   delay(185);  // resync after changing mode - required or no video data sent
 
   while (true) {
@@ -320,29 +325,18 @@ void Task_Lepton(void *pvParameters) {
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
 
-      size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
-
-      uint16_t min, max;
-      u16_frame_min_max(vospiBuf[bufferWriteIndex], width, height, &min, &max);
-      uint16_t range = max - min;
-      if (range == 0) {  // avoid division by zero
-        ESP_LOGW("main", "empty thermal image");
-        range = 1;
-      }
-
       // reformat to 8-bit
-      for (uint16_t y=0; y<height; y++) {
-        for (uint16_t x=0; x<width; x++) {
-          vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
-        }
-      }
+      // size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
+      // for (uint16_t y=0; y<height; y++) {
+      //   for (uint16_t x=0; x<width; x++) {
+      //     vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
+      //   }
+      // }
 
       while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
       if (bufferReaders == 0) {
         bufferWriteIndex = (bufferWriteIndex + 1) % 2;
-      } else {
-        ESP_LOGW("main", "skipped frame");
-      }
+      }  // otherwise skip the frame - TODO allow buffer swap during discard packets
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
       if (streamingTask != nullptr) {
@@ -374,9 +368,9 @@ void setup() {
   assert(streamingClientsSemaphore != nullptr);
 
   // webserver is relatively low priority
-  xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 4, NULL, ARDUINO_RUNNING_CORE);
-  xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", kJpegBufferSize + 4096, NULL, 1, &streamingTask, ARDUINO_RUNNING_CORE);
-  xTaskCreatePinnedToCore(Task_Server, "Task_Server", kJpegBufferSize + 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Lepton, "Task_Lepton", 4096, NULL, 16, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_MjpegStream, "Task_MjpegStream", 4096, NULL, 1, &streamingTask, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(Task_Server, "Task_Server", 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
 }
 
 void loop() {
