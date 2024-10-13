@@ -355,7 +355,7 @@ bool FlirLepton::readReg(uint16_t addr, size_t len, uint8_t* dataOut) {
   return true; 
 }
 
-bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
+bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWrittenOut) {
   size_t requiredBuffer = videoPacketDataLen_ * packetsPerSegment_ * segmentsPerFrame_;
   if (bufferLen < requiredBuffer) {
     LEP_LOGE("readVoSpi insufficient buffer, got %i need %i", bufferLen, requiredBuffer);
@@ -370,6 +370,8 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
     }
   }
 
+  uint8_t dummyBuf[videoPacketDataLen_];
+
   spi_->beginTransaction(kDefaultSpiSettings);
   digitalWrite(csPin_, LOW);
 
@@ -382,11 +384,11 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
 
       uint8_t header[4];
       spi_->transfer(header, 4);
-      spi_->transfer(bufferPtr, videoPacketDataLen_);  // always read a whole packet
       uint16_t id = ((uint16_t)header[0] << 8) | header[1];
       uint16_t crc = ((uint16_t)header[3] << 8) | header[4];
 
       if (((id >> 8) & 0x0f) == 0x0f) {  // discard packet
+        spi_->transfer(dummyBuf, videoPacketDataLen_);  // send the clocks, ignore the data, don't overwrite the buffer
         if (packet == 0 && segment == 1) {  // if no frame in progress, return
           invalidate = true;
           break;
@@ -394,7 +396,13 @@ bool FlirLepton::readVoSpi(size_t bufferLen, uint8_t* buffer) {
           packet--;
           continue;
         }
+      } else {
+        spi_->transfer(bufferPtr, videoPacketDataLen_);  // read into the buffer
+        if (bufferWrittenOut != nullptr) {
+          *bufferWrittenOut = true;
+        }
       }
+
       uint16_t packetNum = id & 0xfff;
       uint8_t ttt = (id >> 12) & 0x7;
 

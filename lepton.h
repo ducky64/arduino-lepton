@@ -91,8 +91,8 @@ public:
   // Reads a VoSpi frame. Must be called regularly to maintain sync.
   // Blocks while a frame is being read out, returns quicker inbetween frames.
   // Returns true if a frame was read (and stored in buffer), otherwise false (eg, discard packet read).
-  // buffer may still be overwritten to even if no video data is present.
-  bool readVoSpi(size_t bufferLen, uint8_t* buffer);
+  // bufferWrittenOut is set to true if the buffer has been overwritten, even partially.
+  bool readVoSpi(size_t bufferLen, uint8_t* buffer, bool* bufferWrittenOut = nullptr);
 
   /** Metadata operations
   */

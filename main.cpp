@@ -86,7 +86,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t uc
   }
 
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, ucPixelType, JPEGE_SUBSAMPLE_444, JPEGE_Q_HIGH);
+    rc = jpgenc.encodeBegin(&enc, frameWidth, frameHeight, ucPixelType, JPEGE_SUBSAMPLE_444, JPEGE_Q_BEST);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "encodeBegin error %i", rc);
       return rc;
@@ -152,7 +152,7 @@ void Task_MjpegStream(void *pvParameters) {
     int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
         jpegencPixelType, streamingJpegBuffer, sizeof(streamingJpegBuffer), &jpegSize);
     lastFrame = frameCounter;
-    
+
     bufferReaders--;
 
     // deallocate disconnected clients
@@ -324,8 +324,14 @@ void Task_Lepton(void *pvParameters) {
 
   delay(185);  // resync after changing mode - required or no video data sent
 
+  bool bufferFlipRequested = false;  // allow queueing a buffer flip until data is overwritten
   while (true) {
-    bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex]);
+    bool bufferOverwritten = false;
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf[0]), vospiBuf[bufferWriteIndex], &bufferOverwritten);
+
+    if (bufferOverwritten) {
+      bufferFlipRequested = false;
+    }
 
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
@@ -338,15 +344,24 @@ void Task_Lepton(void *pvParameters) {
       //   }
       // }
 
+      bufferFlipRequested = true;
+    }
+
+    if (bufferFlipRequested) {
+      bool bufferFlipSuccess = false;
       while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
       if (bufferReaders == 0) {
         bufferWriteIndex = (bufferWriteIndex + 1) % 2;
         frameCounter++;
-      }  // otherwise skip the frame - TODO allow buffer swap during discard packets
+        bufferFlipSuccess = true;
+      }
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
-      if (streamingTask != nullptr) {
-        xTaskNotify(streamingTask, 0, eNoAction);
+      if (bufferFlipSuccess) {
+        if (streamingTask != nullptr) {
+          xTaskNotify(streamingTask, 0, eNoAction);
+        }
+        bufferFlipRequested = false;
       }
     }
 
