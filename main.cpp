@@ -123,8 +123,8 @@ uint8_t webserverJpegBuffer[kJpegBufferSize];
 
 const char kMjpegHeader[] = "HTTP/1.1 200 OK\r\n" \
                       "Access-Control-Allow-Origin: *\r\n" \
-                      "Content-Type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n";
-const char kMjpegBoundary[] = "\r\n--123456789000000000000987654321\r\n";  // arbitrarily-chosen delimiter
+                      "Content-Type: multipart/x-mixed-replace; boundary=FRAME\r\n";
+const char kMjpegBoundary[] = "\r\n--FRAME\r\n";  // arbitrarily-chosen delimiter
 const char kMjpegContentType[] = "Content-Type: image/jpeg\r\nContent-Length: ";  // written per frame
 const int kMjpegHeaderLen = strlen(kMjpegHeader);
 const int kMjpegBoundaryLen = strlen(kMjpegBoundary);
@@ -134,11 +134,8 @@ const int kMjpegContentTypeLen = strlen(kMjpegContentType);
 void Task_MjpegStream(void *pvParameters) {
   uint8_t lastFrame = frameCounter - 1;
   while (true) {
-    while (xTaskNotifyWait(0, 0, nullptr, portMAX_DELAY) == pdFALSE);
-    if (numStreamingClients <= 0) {  // quick test
-      continue;
-    }
-    if (frameCounter == lastFrame) {
+    if (numStreamingClients <= 0 || frameCounter == lastFrame) {  // quick test
+      xTaskNotifyWait(0, 0, nullptr, portMAX_DELAY);
       continue;
     }
 
