@@ -1,5 +1,5 @@
 # arduino-lepton
-FLIR Lepton drivers for Arduino HAL. Tested with ESP32-S3 + Lepton 3.5 on a custom board, but (in concept) should work on most Arduino platforms that have the necessary and computational power.
+FLIR Lepton drivers for Arduino HAL. Tested with ESP32-S3 + Lepton 3.5 on a custom board, but (in concept) should work on most Arduino platforms that have the enough memory and computational power.
 
 **This README under construction. Will also be pushed to PlatformIO registry.**
 
