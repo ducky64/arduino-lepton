@@ -65,6 +65,7 @@ uint8_t jpegencPixelBytes = 1;
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
+uint8_t frameCounter = 0;  // incrementing, reflecting the frame count in the read buffer
 std::atomic<uint8_t> bufferReaders{0};  // number of readers of the non-writing buffer, locks bufferWriteIndex if >0
 SemaphoreHandle_t bufferControlSemaphore = nullptr;  // mutex to control access to the write index / readers count
 StaticSemaphore_t bufferControlSemaphoreBuf;
@@ -131,10 +132,13 @@ const int kMjpegContentTypeLen = strlen(kMjpegContentType);
 
 // For each connected streaming client, send new frames as they become available
 void Task_MjpegStream(void *pvParameters) {
+  uint8_t lastFrame = frameCounter - 1;
   while (true) {
     while (xTaskNotifyWait(0, 0, nullptr, portMAX_DELAY) == pdFALSE);
-
     if (numStreamingClients <= 0) {  // quick test
+      continue;
+    }
+    if (frameCounter == lastFrame) {
       continue;
     }
 
@@ -147,7 +151,8 @@ void Task_MjpegStream(void *pvParameters) {
 
     int encodeStatus = encodeJpeg(vospiBuf[bufferReadIndex], lepton.getFrameWidth(), lepton.getFrameHeight(),
         jpegencPixelType, streamingJpegBuffer, sizeof(streamingJpegBuffer), &jpegSize);
-
+    lastFrame = frameCounter;
+    
     bufferReaders--;
 
     // deallocate disconnected clients
@@ -336,6 +341,7 @@ void Task_Lepton(void *pvParameters) {
       while (xSemaphoreTake(bufferControlSemaphore, portMAX_DELAY) != pdTRUE);
       if (bufferReaders == 0) {
         bufferWriteIndex = (bufferWriteIndex + 1) % 2;
+        frameCounter++;
       }  // otherwise skip the frame - TODO allow buffer swap during discard packets
       assert(xSemaphoreGive(bufferControlSemaphore) == pdTRUE);
 
