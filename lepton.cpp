@@ -8,11 +8,42 @@ const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3)
 // Override these to use some other logging framework
 #ifdef ESP32
   static const char* TAG = "lepton";
-  #define LEP_LOGV(...) ESP_LOGV(TAG, __VA_ARGS__)
-  #define LEP_LOGD(...) ESP_LOGD(TAG, __VA_ARGS__)
-  #define LEP_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
-  #define LEP_LOGW(...) ESP_LOGW(TAG, __VA_ARGS__)
-  #define LEP_LOGE(...) ESP_LOGE(TAG, __VA_ARGS__)
+  #ifndef LEP_LOGV
+    #define LEP_LOGV(...) ESP_LOGV(TAG, __VA_ARGS__)
+  #endif
+  #ifndef LEP_LOGD
+    #define LEP_LOGD(...) ESP_LOGD(TAG, __VA_ARGS__)
+  #endif
+  #ifndef LEP_LOGI
+    #define LEP_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
+  #endif
+  #ifndef LEP_LOGW
+    #define LEP_LOGW(...) ESP_LOGW(TAG, __VA_ARGS__)
+  #endif
+  #ifndef LEP_LOGE
+    #define LEP_LOGE(...) ESP_LOGE(TAG, __VA_ARGS__)
+  #endif
+#else  // generic sprintf + Arduino Serial fallback for other platforms
+  char logBuf[128];
+  #ifndef LEP_LOGV
+    #define LEP_LOGV(...)
+  #endif
+
+  #ifndef LEP_LOGD
+    #define LEP_LOGD(...)
+  #endif
+
+  #ifndef LEP_LOGI
+    #define LEP_LOGI(...) sprintf(logBuf, __VA_ARGS__); Serial.print("LEP I "); Serial.println(logBuf);
+  #endif
+
+  #ifndef LEP_LOGW
+    #define LEP_LOGW(...) sprintf(logBuf, __VA_ARGS__); Serial.print("LEP W "); Serial.println(logBuf);
+  #endif
+
+  #ifndef LEP_LOGE
+    #define LEP_LOGE(...) sprintf(logBuf, __VA_ARGS__); Serial.print("LEP E "); Serial.println(logBuf);
+  #endif
 #endif
 
 // utility conversions

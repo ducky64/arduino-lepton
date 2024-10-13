@@ -7,41 +7,17 @@
 // and RTOS multiclient version (BSD)
 // https://github.com/arkhipenko/esp32-cam-mjpeg-multiclient/blob/master/esp32_camera_mjpeg_multiclient.ino
 #include <WiFi.h>
-#include "WifiConfig.h"  // must define 'const char* ssid' and 'const char* password'
 #include <WebServer.h>
 #include <atomic>
 #include <JPEGENC.h>
 
-// Unused (so far) pinmaps from HDL
-// touch_duck=TOUCH6, 6,
-// flir=SPI2, 
-// flir.sck=GPIO1, 39, 
-// flir.mosi=GPIO5, 5, 
-// flir.miso=GPIO4, 4, 
-// i2c=I2CEXT0, 
-// i2c.scl=GPIO39, 32, 
-// i2c.sda=GPIO38, 31, 
-// cam_rst=GPIO21, 23, 
-// flir_rst=GPIO41, 34, 
-// flir_pwrdn=GPIO40, 33, 
-// flir_cs=GPIO2, 38, 
-// flir_vsync=GPIO7, 7, 
-// cam=DVP, 
-// cam.xclk=GPIO13, 21, 
-// cam.pclk=GPIO11, 19, 
-// cam.href=GPIO47, 24, 
-// cam.vsync=GPIO48, 25, 
-// cam.y0=GPIO10, 18, 
-// cam.y1=GPIO9, 17, 
-// cam.y2=GPIO18, 11, 
-// cam.y3=GPIO17, 10, 
-// cam.y4=GPIO8, 12, 
-// cam.y5=GPIO3, 15, 
-// cam.y6=GPIO12, 20, 
-// cam.y7=GPIO14, 22, 
-// 0=USB, 
-// 0.dp=GPIO20, 14, 
-// 0.dm=GPIO19, 13
+
+#if __has_include("WifiConfig.h")
+  #include "WifiConfig.h"  // optionally define ssid and password in this .gitignore'd file
+#else
+  const char* ssid = "YOUR_SSID_HERE";
+  const char* password = "";
+#endif
 
 const int kPinLedR = 0;  // overlaps with strapping pin
 
@@ -55,6 +31,7 @@ const int kPinLepVsync = 7;
 const int kPinLepSck = 1;
 const int kPinLepMosi = 5;
 const int kPinLepMiso = 4;
+
 
 SPIClass spi(HSPI);
 TwoWire i2c(0);
