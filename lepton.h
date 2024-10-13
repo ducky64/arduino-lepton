@@ -58,13 +58,21 @@ public:
   // Enable the VSYNC output on GPIO
   bool enableVsync();
 
-  enum Agc {
-    kAgcNone = -1,  // custom for this library, disables AGC
-    kAgcLinear = 0,  // histogram-based AGC
-    kAgcHeq,
-    kAgcEnd,
+  enum VideoMode {
+    k14Bit,  // default 14-bit
+    kTLinear,  // 16-bit TLinear
+    kAgcLinear,  // histogram-based AGC
+    kAgcHeq
   };
-  bool setAgc(Agc mode);
+  // Sets the video mode, managing both the AGC and TLinear registers
+  bool setVideoMode(VideoMode mode);
+
+  enum VideoFormat {
+    kGrey14,
+    kRgb888
+  }
+  // Sets the video format
+  bool setVideoFormat(VideoFormat format);
 
   /** SPI Operations
    * TODO: move into a separate class to allow more optimization
@@ -130,9 +138,6 @@ protected:
   uint8_t flirSoftwareVersion_[8];
 
   bool metadataRead_ = false;  // true when the above fields have been attempted to be read
-
-  // mode configuration
-  Agc agcMode_ = kAgcNone;
 
   // video data configuration
   uint8_t bytesPerPixel_ = 2;

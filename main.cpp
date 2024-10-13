@@ -309,8 +309,8 @@ void Task_Lepton(void *pvParameters) {
   bool result = lepton.enableVsync();
   ESP_LOGI("main", "Lepton Vsync << %i", result);
 
-  result = lepton.setAgc(FlirLepton::kAgcHeq);
-  ESP_LOGI("main", "Lepton AGC mode << %i", result);
+  result = lepton.setVideoMode(FlirLepton::kAgcHeq);
+  ESP_LOGI("main", "Lepton VideoMode << %i", result);
 
   delay(185);  // resync after changing mode - required or no video data sent
 
@@ -333,7 +333,7 @@ void Task_Lepton(void *pvParameters) {
       // reformat to 8-bit
       for (uint16_t y=0; y<height; y++) {
         for (uint16_t x=0; x<width; x++) {
-          vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 2;
+          vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
         }
       }
 
