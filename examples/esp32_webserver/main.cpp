@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include "lepton.h"
-#include "lepton_util.h"
 
 // web server code based on (BSD)
 // https://github.com/arkhipenko/esp32-cam-mjpeg/blob/master/esp32_camera_mjpeg.ino

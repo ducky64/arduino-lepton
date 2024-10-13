@@ -133,7 +133,7 @@ bool FlirLepton::isReady() {
       return false;
     }
     uint64_t flirSerial = bufferToU64(cmdBuffer);
-    LEP_LOGI("isReady() SYS FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
+    LEP_LOGD("isReady() SYS FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
     if (flirSerial == 0) {  // a sanity check on comms correctness
       LEP_LOGW("isReady() failed sanity check: zero FLIR serial");
     }
@@ -149,14 +149,14 @@ bool FlirLepton::isReady() {
       flirPartNum_[i*2] = cmdBuffer[i*2 + 1];
       flirPartNum_[i*2 + 1] = cmdBuffer[i*2];
     }
-    LEP_LOGI("isReady() OEM FLIR Part Number = '%s'", flirPartNum_);
+    LEP_LOGD("isReady() OEM FLIR Part Number = '%s'", flirPartNum_);
 
     result = commandGet(kOem, 0x20 >> 2, 8, flirSoftwareVersion_, true);
     if (result != kLepOk) {
       LEP_LOGE("isReady() OEM Camera Software Revision commandGet failed %i", result);
       return false;
     }
-    LEP_LOGI("isReady() OEM Camera Software Revision = GPP = 0x %02x %02x %02x, DSP = 0x %02x %02x %02x",
+    LEP_LOGD("isReady() OEM Camera Software Revision = 0x %02x %02x %02x %02x %02x %02x",
         flirSoftwareVersion_[0], flirSoftwareVersion_[1], flirSoftwareVersion_[2], 
         flirSoftwareVersion_[3], flirSoftwareVersion_[4], flirSoftwareVersion_[5]);
 

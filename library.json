@@ -1,0 +1,13 @@
+{
+  "owner": "ducky64",
+  "version": "0.1.0",
+  "name": "arduino-lepton",
+  "description": "FLIR Lepton drivers for Arduino HAL",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/ducky64/arduino-lepton"
+  },
+  "license": "BSD",
+  "frameworks": ["arduino"]
+}
