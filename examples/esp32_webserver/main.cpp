@@ -37,7 +37,7 @@ TwoWire i2c(0);
 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst, kPinLepPwrdn);
 uint8_t jpegencPixelType = JPEGE_PIXEL_GRAYSCALE;
-uint8_t jpegencPixelBytes = 1;
+uint8_t jpegencPixelBytes = 2;
 uint8_t vospiBuf[2][160*120*3] = {0};  // up to RGB888, double-buffered
 // controlled by the writing (sensor) task
 uint8_t bufferWriteIndex = 0;  // buffer being written to, the other one is implicitly the read buffer; 0 means buffer not being read
@@ -55,6 +55,22 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t uc
   JPEGENCODE enc;
   int rc;
 
+  size_t lineLength;
+  if (jpegencPixelBytes == 2) {  // use end of the buffer for 16b->8b conversion
+    assert(jpegBufLen > frameHeight * frameWidth);
+    uint8_t* frame8b = jpegBuf + jpegBufLen - frameHeight * frameWidth;
+    for (uint16_t y=0; y<frameHeight; y++) {
+      for (uint16_t x=0; x<frameWidth; x++) {  // for AGC mode
+        frame8b[y*frameWidth+x] = (((uint16_t)frame[2*(y*frameWidth+x)] << 8) | frame[2*(y*frameWidth+x) + 1]) >> 0;
+      }
+    }
+    frame = frame8b;
+    jpegBufLen -= frameHeight * frameWidth;
+    lineLength = frameWidth;
+  } else {
+    lineLength = frameWidth * jpegencPixelBytes;
+  }
+
   rc = jpgenc.open(jpegBuf, jpegBufLen);
   if (rc != JPEGE_SUCCESS) {
     ESP_LOGE("jpg", "Open error %i", rc);
@@ -70,7 +86,7 @@ int encodeJpeg(uint8_t* frame, size_t frameWidth, size_t frameHeight, uint8_t uc
   }
   
   if (rc == JPEGE_SUCCESS) {
-    rc = jpgenc.addFrame(&enc, frame, frameWidth * jpegencPixelBytes);
+    rc = jpgenc.addFrame(&enc, frame, lineLength);
     if (rc != JPEGE_SUCCESS) {
       ESP_LOGE("jpg", "addFrame error %i", rc);
       return rc;
@@ -285,6 +301,7 @@ void Task_Lepton(void *pvParameters) {
   assert(lepton.enableVsync());
 
   // optionally comment this and/or the next block out to not use AGC or colorization
+  // note, the JPEG encoding only uses the lowest 8 bits (assumes AGC on)
   assert(lepton.setVideoMode(FlirLepton::kAgcHeq));
 
   assert(lepton.setVideoFormat(FlirLepton::kRgb888));
@@ -302,16 +319,6 @@ void Task_Lepton(void *pvParameters) {
 
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
-
-      // reformat to 8-bit in greyscale mode
-      if (jpegencPixelBytes == 1) {
-        size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
-        for (uint16_t y=0; y<height; y++) {
-          for (uint16_t x=0; x<width; x++) {
-            vospiBuf[bufferWriteIndex][y*width+x] = (((uint16_t)vospiBuf[bufferWriteIndex][2*(y*width+x)] << 8) | vospiBuf[bufferWriteIndex][2*(y*width+x) + 1]) >> 0;
-          }
-        }
-      }
 
       bufferFlipRequested = true;
     }
