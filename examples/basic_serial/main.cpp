@@ -58,8 +58,7 @@ void setup() {
 
   char line[lepton.getFrameWidth()] = {0};
   while (true) {
-    bool bufferOverwritten = false;
-    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf, &bufferOverwritten);
+    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf);
     if (readResult) {
       digitalWrite(kPinLedR, !digitalRead(kPinLedR));
       Serial.println("Got frame");
