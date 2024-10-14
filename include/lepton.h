@@ -126,6 +126,17 @@ public:
     return bytesPerPixel_;
   }
 
+  // sets the video parameters, can be useful if using a different device or configuration this library doesn't support
+  void setVideoParameters(uint8_t bytesPerPixel, uint8_t frameWidth, uint8_t frameHeight,
+      size_t videoPacketDataLen, size_t packetsPerSegment, size_t segmentsPerFrame) {
+    bytesPerPixel_ = bytesPerPixel;
+    frameWidth_ = frameWidth;
+    frameHeight_ = frameHeight;
+    videoPacketDataLen_ = videoPacketDataLen;
+    packetsPerSegment_ = packetsPerSegment;
+    segmentsPerFrame_ = segmentsPerFrame;
+  }
+
 protected:
   /** I2C Operations 
    */
