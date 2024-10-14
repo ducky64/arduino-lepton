@@ -25,11 +25,11 @@ All examples should build right out of the box with PlatformIO and have pinmaps 
 FlirLepton lepton(i2c, spi, kPinLepCs, kPinLepRst);
 uint8_t frameBuffer[160*120*2] = {0};
 
-lepton.begin();
-while (!lepton.isReady());
+lepton.begin();  // resets the Lepton
+while (!lepton.isReady());  // poll until Lepton reports ready
 
 while (true) {
-  bool readResult = lepton.readVoSpi(sizeof(frameBuffer), frameBuffer);
+  bool readResult = lepton.readVoSpi(sizeof(frameBuffer), frameBuffer);  // returns true on a new frame
   if (readResult) {
     // do something with frameBuffer
   }
@@ -48,6 +48,8 @@ See full API in the [header file](include/lepton.h).
 - Only tested with Lepton 3.5, but likely works with all Lepton 3 devices (160x120 resolution).
   For other devices, you can try manually setting the video parameters with `FlirLepton::setVideoParameters(uint8_t bytesPerPixel, uint8_t frameWidth, uint8_t frameHeight,
   size_t videoPacketDataLen, size_t packetsPerSegment, size_t segmentsPerFrame)`
+- `readVoSpi` blocks when reading a frame, but returns immediately during a discard frame.
+  Future versions might look at splitting out the VoSPI into a different class that can have platform-specific optimized implementations, like using DMA and allowing other threads to run while a packet is being read.
 
 
 ## Related Work
