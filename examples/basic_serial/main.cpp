@@ -86,14 +86,10 @@ void setup() {
       Serial.println("");
 
       uint16_t range = max - min;
-      if (range < 1) {
-        range = 1;  // avoid division-by-zero
-      }
-
       for (size_t y=0; y<height; y++) {  // print each pixel as between 0-9
         for (size_t x=0; x<width; x++) {
           uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
-          line[x] = ((uint32_t)(pixel - min) * 10 - 1) / range + '0';
+          line[x] = ((uint32_t)(pixel - min) * 10) / (range + 1) + '0';
         }
         Serial.println(line);
       } 
