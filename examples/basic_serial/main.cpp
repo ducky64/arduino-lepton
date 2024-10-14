@@ -55,46 +55,44 @@ void setup() {
   assert(lepton.enableVsync());
   
   while (!digitalRead(kPinLepVsync));  // seems necessary
-
-  char line[lepton.getFrameWidth()] = {0};
-  while (true) {
-    bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf);
-    if (readResult) {
-      digitalWrite(kPinLedR, !digitalRead(kPinLedR));
-      Serial.println("Got frame");
-
-      // run basic linear AGC
-      size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
-      uint16_t min = 65535, max = 0;
-      for (size_t y=0; y<height; y++) {
-        for (size_t x=0; x<width; x++) {
-          uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
-          if (pixel < min) {
-            min = pixel;
-          }
-          if (pixel > max) {
-            max = pixel;
-          } 
-        }
-      }
-
-      Serial.print("Min = ");
-      Serial.print(min);
-      Serial.print(", max = ");
-      Serial.print(max);
-      Serial.println("");
-
-      uint16_t range = max - min;
-      for (size_t y=0; y<height; y++) {  // print each pixel as between 0-9
-        for (size_t x=0; x<width; x++) {
-          uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
-          line[x] = ((uint32_t)(pixel - min) * 10) / (range + 1) + '0';
-        }
-        Serial.println(line);
-      } 
-    }
-  }
 }
 
 void loop() {
+  bool readResult = lepton.readVoSpi(sizeof(vospiBuf), vospiBuf);
+  if (readResult) {
+    digitalWrite(kPinLedR, !digitalRead(kPinLedR));
+    Serial.println("Got frame");
+
+    // run basic linear AGC
+    size_t width = lepton.getFrameWidth(), height = lepton.getFrameHeight();
+    uint16_t min = 65535, max = 0;
+    for (size_t y=0; y<height; y++) {
+      for (size_t x=0; x<width; x++) {
+        uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
+        if (pixel < min) {
+          min = pixel;
+        }
+        if (pixel > max) {
+          max = pixel;
+        } 
+      }
+    }
+
+    Serial.print("Min = ");
+    Serial.print(min);
+    Serial.print(", max = ");
+    Serial.print(max);
+    Serial.println("");
+
+    uint16_t range = max - min;
+    char line[lepton.getFrameWidth() + 1];
+    for (size_t y=0; y<height; y++) {  // print each pixel as between 0-9
+      for (size_t x=0; x<width; x++) {
+        uint16_t pixel = ((uint16_t)vospiBuf[2*(y*width+x)] << 8) | vospiBuf[2*(y*width+x) + 1];
+        line[x] = ((uint32_t)(pixel - min) * 10) / (range + 1) + '0';
+      }
+      line[sizeof(line) - 1] = 0;  // null terminator
+      Serial.println(line);
+    } 
+  }
 }
