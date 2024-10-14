@@ -245,7 +245,7 @@ void handleNotFound() {
 
 
 void Task_Server(void *pvParameters) {
-  ESP_LOGI("main", "Start wifi");
+  ESP_LOGI("main", "WiFi init");
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -257,7 +257,7 @@ void Task_Server(void *pvParameters) {
   server.on("/jpg", HTTP_GET, handle_jpg);
   server.onNotFound(handleNotFound);
   server.begin();
-  ESP_LOGI("main", "Server started");
+  ESP_LOGI("main", "WiFi server started");
 
   while (true) {
     server.handleClient();
@@ -267,24 +267,27 @@ void Task_Server(void *pvParameters) {
 
 
 void Task_Lepton(void *pvParameters) {
-  ESP_LOGI("main", "Start init");
+  ESP_LOGI("main", "Lepton init");
   pinMode(kPinLepVsync, INPUT);
-  bool beginResult = lepton.begin();
-  ESP_LOGI("main", "Lepton init << %i", beginResult);
+  assert(lepton.begin());
 
   while (!lepton.isReady()) {
     vTaskDelay(1);
   }
+  ESP_LOGI("main", "Lepton ready");
 
-  bool result = lepton.enableVsync();
-  ESP_LOGI("main", "Lepton Vsync << %i", result);
+  ESP_LOGI("main", "Lepton Serial = %llu", lepton.getFlirSerial());
+  ESP_LOGI("main", "Lepton Part Number = %s", lepton.getFlirPartNum());
+  ESP_LOGI("main", "Lepton Software Version = 0x %02x %02x %02x %02x %02x %02x", 
+      lepton.getFlirSoftwareVerison()[0], lepton.getFlirSoftwareVerison()[1], lepton.getFlirSoftwareVerison()[2],
+      lepton.getFlirSoftwareVerison()[3], lepton.getFlirSoftwareVerison()[4], lepton.getFlirSoftwareVerison()[5]);
+
+  assert(lepton.enableVsync());
 
   // optionally comment this and/or the next block out to not use AGC or colorization
-  result = lepton.setVideoMode(FlirLepton::kAgcHeq);
-  ESP_LOGI("main", "Lepton VideoMode << %i", result);
+  assert(lepton.setVideoMode(FlirLepton::kAgcHeq));
 
-  result = lepton.setVideoFormat(FlirLepton::kRgb888);
-  ESP_LOGI("main", "Lepton VideoFormat << %i", result);
+  assert(lepton.setVideoFormat(FlirLepton::kRgb888));
   jpegencPixelType = JPEGE_PIXEL_RGB888;
   jpegencPixelBytes = 3;
 

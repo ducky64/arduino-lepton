@@ -24,7 +24,7 @@ const SPISettings FlirLepton::kDefaultSpiSettings(20000000, MSBFIRST, SPI_MODE3)
     #define LEP_LOGE(...) ESP_LOGE(TAG, __VA_ARGS__)
   #endif
 #else  // generic sprintf + Arduino Serial fallback for other platforms
-  char logBuf[128];
+  static char logBuf[128];
   #ifndef LEP_LOGV
     #define LEP_LOGV(...)
   #endif
@@ -132,9 +132,9 @@ bool FlirLepton::isReady() {
       LEP_LOGE("isReady() SYS FLIR Serial commandGet failed %i", result);
       return false;
     }
-    uint64_t flirSerial = bufferToU64(cmdBuffer);
-    LEP_LOGD("isReady() SYS FLIR serial = %llu, 0x%016llx", flirSerial, flirSerial);
-    if (flirSerial == 0) {  // a sanity check on comms correctness
+    flirSerial_ = bufferToU64(cmdBuffer);
+    LEP_LOGD("isReady() SYS FLIR serial = %llu, 0x%016llx", flirSerial_, flirSerial_);
+    if (flirSerial_ == 0) {  // a sanity check on comms correctness
       LEP_LOGW("isReady() failed sanity check: zero FLIR serial");
     }
 

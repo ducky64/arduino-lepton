@@ -96,17 +96,32 @@ public:
 
   /** Metadata operations
   */
-  // returns frame width in pixels
+ // returns the FLIR serial number from the device, valid only after isReady()
+  uint64_t getFlirSerial() {
+    return flirSerial_;
+  }
+
+  // returns the FLIR part number from the device as a string, valid only after isReady()
+  const char* getFlirPartNum() {
+    return flirPartNum_;
+  }
+
+  // returns the FLIR software version from the device as a 6-byte array, valid only after isReady()
+  const uint8_t* getFlirSoftwareVerison() {
+    return flirSoftwareVersion_;
+  }
+
+  // returns frame width in pixels, valid only after isReady()
   size_t getFrameWidth() {
     return frameWidth_;
   }
 
-  // returns frame width in pixels
+  // returns frame width in pixels, valid only after isReady()
   size_t getFrameHeight() {
     return frameHeight_;
   }
 
-  // returns bytes per pixel, currently 2=16-bit grey mode, 3-RGB888 format
+  // returns bytes per pixel, currently 2=16-bit grey mode, 3-RGB888 format, valid only after isReady()
   size_t getBytesPerPixel() {
     return bytesPerPixel_;
   }
@@ -146,7 +161,7 @@ protected:
 
   uint64_t flirSerial_ = 0;
   char flirPartNum_[33] = {0};
-  uint8_t flirSoftwareVersion_[8];
+  uint8_t flirSoftwareVersion_[8] = {0};
 
   bool metadataRead_ = false;  // true when the above fields have been attempted to be read
 
